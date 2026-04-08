@@ -1,0 +1,86 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>LET'S TALK</title>
+    <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+    <nav>
+        <div class="logo"><strong>LET'S</strong> TALK</div>
+        <div class="links"><a href="admin.html"> Login</a></div>
+    </nav>
+<!-- Add this HTML block to your index.html, e.g., after your header or before the blog-feed -->
+<section class="image-slider-container">
+    <div class="slider">
+        <div class="slides">
+            <!-- Slide 1: Mental Health Focus -->
+            <div class="slide active">
+                <img src="https://images.unsplash.com/photo-1506126613408-eca07ce68773?q=80&w=1999&auto=format&fit=crop" alt="Youth mental health" class="slider-image">
+                <div class="slide-caption"> 
+                    <h2>Peace of Mind</h2>
+                    <p>Finding strength and mental wellness in a busy world.</p>
+                    <a href="#" class="read-more-btn" data-post-id="YOUR_POST_ID_1">Read More</a>
+                </div>
+            </div>
+            <!-- Slide 2: Youth for Christ Focus -->
+            <div class="slide">
+                <img src="https://images.unsplash.com/photo-1490730141103-6cac27aaab94?q=80&w=2070&auto=format&fit=crop" alt="Youth for Christ" class="slider-image">
+                <div class="slide-caption">
+                    <h2>Rooted in Faith</h2>
+                    <p>Winning the generation for Christ through love and truth.</p>
+                    <a href="#" class="read-more-btn" data-post-id="YOUR_POST_ID_2">Read More</a>
+                </div>
+            </div>
+            <!-- Slide 3: Youth Related Topics -->
+            <div class="slide">
+                <img src="https://images.unsplash.com/photo-1529156069898-49953e39b3ac?q=80&w=2064&auto=format&fit=crop" alt="Youth community" class="slider-image">
+                <div class="slide-caption">
+                    <h2>Our Generation, Our Voice</h2>
+                    <p>Tackling real issues and celebrating youth culture together.</p>
+                    <a href="#" class="read-more-btn" data-post-id="YOUR_POST_ID_3">Read More</a>
+                </div>
+            </div>
+        </div>
+        <button class="prev-slide">&#10094;</button>
+        <button class="next-slide">&#10095;</button>
+        <div class="dot-container">
+            <span class="dot active" onclick="currentSlide(1)"></span>
+            <span class="dot" onclick="currentSlide(2)"></span>
+            <span class="dot" onclick="currentSlide(3)"></span>
+        </div>
+    </div>
+</section>
+
+    <div class="container">
+        <header style="text-align: center; margin-bottom: 3rem;">
+            <h1>Latest Stories</h1>
+            <p>Insights, thoughts, and conversations.</p>
+            <div style="max-width: 500px; margin: 2rem auto 0 auto;">
+                <input type="text" id="search-bar" placeholder="Search stories by title..." style="margin-bottom: 0;">
+            </div>
+        </header>
+
+        <!-- Blog Post Feed -->
+        <div id="blog-feed" class="blog-grid">
+            <!-- Posts injected by JS -->
+        </div>
+
+        <!-- Chat/Question Section -->
+        <div class="interaction-box">
+            <h3>Ask the Author a Question</h3>
+            <p>Have a doubt? Want to add a comment?Send a direct message to the author.</p>
+            <input type="text" id="user-name" placeholder="Your Name">
+            <textarea id="user-question" placeholder="What's on your mind?"></textarea>
+            <button id="send-chat">Send Message</button>
+            
+            <div id="public-chats" style="margin-top: 2rem;">
+                <h4>Recent Conversations</h4>
+                <!-- Chat responses from blogger will appear here -->
+            </div>
+        </div>
+    </div>
+
+    <script type="module" src="js/app.js"></script>
+</body>
+</html>

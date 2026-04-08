@@ -1,0 +1,22 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Helper function to check if the user is the authorized admin
+    function isAdmin() {
+      return request.auth != null && request.auth.token.email == "your-admin-email@example.com";
+    }
+
+    // Blog Posts: Anyone can read, only the blogger (admin) can write.
+    match /posts/{postId} {
+      allow read: if true;
+      allow create, update, delete: if isAdmin();
+    }
+
+    // Chats: Anyone can send a question and read replies, only the blogger can reply/delete.
+    match /chats/{chatId} {
+      allow read, create: if true;
+      allow update, delete: if isAdmin();
+    }
+  }
+}
