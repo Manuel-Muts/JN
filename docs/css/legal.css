@@ -1,0 +1,120 @@
+.legal-container {
+    max-width: 800px;
+    margin: 3rem auto;
+    padding: 2rem;
+    background: var(--white);
+    border-radius: 12px;
+    box-shadow: var(--shadow);
+    line-height: 1.7;
+}
+
+.legal-container h1 {
+    text-align: center;
+    margin-bottom: 0.5rem;
+}
+
+.last-updated {
+    text-align: center;
+    color: var(--gray);
+    font-size: 0.9rem;
+    margin-bottom: 2rem;
+}
+
+.legal-container section {
+    margin-bottom: 1.8rem;
+}
+
+.legal-container h2 {
+    margin-bottom: 0.5rem;
+    color: var(--primary);
+}
+
+.legal-container p {
+    color: #334155;
+}
+
+/* Footer */
+.legal-footer {
+    text-align: center;
+    margin: 2rem 0;
+}
+
+.legal-footer a {
+    color: var(--primary);
+    text-decoration: none;
+    font-weight: 500;
+}
+
+.legal-footer a:hover {
+    text-decoration: underline;
+}
+
+.cookie-banner {
+    position: fixed;
+    bottom: 20px;
+    left: 50%;
+    transform: translateX(-50%);
+    background: rgba(15, 23, 42, 0.95);
+    color: white;
+    padding: 1.2rem 1.5rem;
+    border-radius: 12px;
+    box-shadow: 0 10px 30px rgba(0,0,0,0.3);
+    display: flex;
+    flex-direction: column;
+    gap: 1rem;
+    max-width: 500px;
+    width: 90%;
+    z-index: 9999;
+    animation: slideUp 0.4s ease;
+}
+
+.cookie-banner p {
+    margin: 0;
+    font-size: 0.9rem;
+    color: #e2e8f0;
+}
+
+.cookie-banner a {
+    color: #a5b4fc;
+    text-decoration: underline;
+}
+
+.cookie-actions {
+    display: flex;
+    gap: 0.5rem;
+    justify-content: flex-end;
+}
+
+/* Secondary button (Decline) */
+.cookie-actions .secondary {
+    background: transparent;
+    border: 1px solid #64748b;
+    color: #e2e8f0;
+}
+
+.cookie-actions .secondary:hover {
+    background: rgba(255,255,255,0.1);
+}
+
+/* Animation */
+@keyframes slideUp {
+    from {
+        opacity: 0;
+        transform: translate(-50%, 20px);
+    }
+    to {
+        opacity: 1;
+        transform: translate(-50%, 0);
+    }
+}
+
+.cookie-banner {
+    transition: all 0.4s ease;
+}
+
+/* Slide out animation */
+.cookie-banner.hide {
+    opacity: 0;
+    transform: translate(-50%, 40px);
+    pointer-events: none;
+}

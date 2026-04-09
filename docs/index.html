@@ -4,11 +4,15 @@
     <meta charset="UTF-8">
     <title>LET'S TALK</title>
     <link rel="stylesheet" href="css/style.css">
+    <link rel="stylesheet" href="css/header.css">
+    <link rel="stylesheet" href="css/legal.css">
 </head>
 <body>
     <nav>
         <div class="logo"><strong>LET'S</strong> TALK</div>
+         
         <div class="links"><a href="admin.html"> Login</a></div>
+       
     </nav>
 <!-- Add this HTML block to your index.html, e.g., after your header or before the blog-feed -->
 <section class="image-slider-container">
@@ -54,7 +58,9 @@
 
     <div class="container">
         <header style="text-align: center; margin-bottom: 3rem;">
-            <h1>Latest Stories</h1>
+            <h1 class="glow-title">
+             <span id="typing-text"></span>
+              </h1>
             <p>Insights, thoughts, and conversations.</p>
             <div style="max-width: 500px; margin: 2rem auto 0 auto;">
                 <input type="text" id="search-bar" placeholder="Search stories by title..." style="margin-bottom: 0;">
@@ -81,6 +87,73 @@
         </div>
     </div>
 
+<audio id="bg-music" loop>
+    <source src="https://www.soundhelix.com/examples/mp3/SoundHelix-Song-1.mp3" type="audio/mpeg">
+</audio>
+
+<button id="music-toggle">🎧</button>
+<script>
+const text = "Latest Stories 🔥";
+let index = 0;
+let output = "";
+
+while (index < text.length) {
+    output += text.charAt(index);
+    index++;
+}
+
+document.getElementById("typing-text").textContent = output;
+</script>
+<script>
+document.addEventListener("DOMContentLoaded", () => {
+    const banner = document.getElementById("cookie-banner");
+    const acceptBtn = document.getElementById("accept-cookies");
+    const declineBtn = document.getElementById("decline-cookies");
+
+    if (!banner || !acceptBtn || !declineBtn) return;
+
+    // Hide if already chosen
+    if (localStorage.getItem("cookieChoice")) {
+        banner.style.display = "none";
+    }
+
+    function hideBanner() {
+        banner.classList.add("hide");
+
+        // Wait for animation to finish, then remove
+        setTimeout(() => {
+            banner.style.display = "none";
+        }, 400);
+    }
+
+    acceptBtn.addEventListener("click", () => {
+        localStorage.setItem("cookieChoice", "accepted");
+        hideBanner();
+    });
+
+    declineBtn.addEventListener("click", () => {
+        localStorage.setItem("cookieChoice", "declined");
+        hideBanner();
+    });
+});
+</script>
     <script type="module" src="js/app.js"></script>
+
+    <div id="cookie-banner" class="cookie-banner">
+    <p>
+        We use cookies to improve your experience on LET'S TALK. By using our site, you agree to our 
+        <a href="privacy.html">Privacy Policy</a>.
+    </p>
+    <div class="cookie-actions">
+        <button id="accept-cookies">Accept</button>
+        <button id="decline-cookies" class="secondary">Decline</button>
+    </div>
+</div>
 </body>
+
+<footer style="text-align:center; margin-top:3rem;">
+    <a href="privacy.html">Privacy Policy</a> |
+    <a href="terms.html">Terms of Use</a>
+</footer>
+
 </html>

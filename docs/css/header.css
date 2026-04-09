@@ -1,0 +1,134 @@
+/* NAVBAR - Modern Glass Effect */
+nav {
+    background: rgba(255, 255, 255, 0.7);
+    backdrop-filter: blur(10px);
+    -webkit-backdrop-filter: blur(10px);
+    border-bottom: 1px solid rgba(255, 255, 255, 0.2);
+}
+
+/* Logo styling */
+.logo {
+    font-size: 1.5rem;
+    font-weight: 800;
+    letter-spacing: 1px;
+    color: var(--dark);
+}
+
+/* Make LET'S glow slightly */
+.logo strong {
+    color: var(--primary);
+    text-shadow: 0 0 8px rgba(79, 70, 229, 0.6);
+}
+
+/* Nav links */
+/* Style the login link as a button */
+.links a {
+    background: linear-gradient(135deg, var(--primary), #6366f1);
+    color: white;
+    padding: 0.6rem 1.4rem;
+    border-radius: 999px; /* pill shape */
+    text-decoration: none;
+    font-weight: 600;
+    letter-spacing: 0.3px;
+    box-shadow: 0 6px 15px rgba(79, 70, 229, 0.3);
+    transition: all 0.25s ease;
+    position: relative;
+    overflow: hidden;
+}
+
+/* Hover effect */
+.links a:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 10px 25px rgba(79, 70, 229, 0.4);
+    background: linear-gradient(135deg, var(--primary-hover), #4f46e5);
+}
+
+/* Click effect */
+.links a:active {
+    transform: scale(0.95);
+}
+
+/* Shine animation */
+.links a::after {
+    content: "";
+    position: absolute;
+    top: 0;
+    left: -100%;
+    width: 100%;
+    height: 100%;
+    background: linear-gradient(
+        120deg,
+        transparent,
+        rgba(255,255,255,0.4),
+        transparent
+    );
+    transition: 0.6s;
+}
+
+.links a:hover::after {
+    left: 100%;
+}
+/* Glow animation */
+.glow-title {
+    font-size: 2.8rem;
+    font-weight: 800;
+    background: linear-gradient(90deg, #4f46e5, #06b6d4, #4f46e5);
+    background-size: 200%;
+    
+    /* Fix starts here */
+    background-clip: text;
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    /* Fallback for browsers that don't support it */
+    color: #4f46e5; 
+    
+    animation: glowMove 4s linear infinite;
+}
+
+
+/* Smooth gradient animation */
+@keyframes glowMove {
+    0% { background-position: 0%; }
+    100% { background-position: 200%; }
+}
+.post-card {
+    position: relative;
+    overflow: hidden;
+}
+
+.post-card::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background: linear-gradient(120deg, transparent, rgba(79,70,229,0.2), transparent);
+    opacity: 0;
+    transition: opacity 0.3s ease;
+}
+
+.post-card:hover::before {
+    opacity: 1;
+}
+
+:root {
+    --neon: #22d3ee;
+}
+
+/* Neon glow accents */
+button:hover {
+    box-shadow: 0 0 10px var(--neon), 0 0 20px var(--neon);
+}
+
+.slide-caption h2 {
+    animation: slideUp 1s ease;
+}
+
+@keyframes slideUp {
+    from {
+        opacity: 0;
+        transform: translateY(40px);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
