@@ -11,7 +11,16 @@
     <nav>
         <div class="logo"><strong>LET'S</strong> TALK</div>
          
-        <div class="links"><a href="admin.html"> Login</a></div>
+        <div class="links">
+            <a href="admin.html" class="admin-link">Admin</a>
+            <div id="auth-nav" style="display: flex; align-items: center;">
+                <button id="user-auth-modal-btn" class="login-pill">Sign In</button>
+                <div id="user-profile-nav" style="display: none; align-items: center; gap: 10px;">
+                    <span id="user-display-name" style="font-weight: 600;"></span>
+                    <button id="user-logout-btn" class="secondary-btn" style="width: auto; margin: 0; padding: 0.4rem 1rem;">Logout</button>
+                </div>
+            </div>
+        </div>
        
     </nav>
 <!-- Add this HTML block to your index.html, e.g., after your header or before the blog-feed -->
@@ -72,15 +81,18 @@
             <!-- Posts injected by JS -->
         </div>
 
-        <!-- Chat/Question Section -->
-        <div class="interaction-box">
-            <h3>Ask the Author a Question</h3>
-            <p>Have a doubt? Want to add a comment?Send a direct message to the author.</p>
-            <input type="text" id="user-name" placeholder="Your Name">
-            <textarea id="user-question" placeholder="What's on your mind?"></textarea>
-            <button id="send-chat">Send Message</button>
+        <!-- Infinite Scroll Sentinel -->
+        <div id="infinite-scroll-sentinel" style="text-align: center; padding: 2rem 0; min-height: 50px;">
+            <!-- Spinner/Status injected by JS -->
+        </div>
+
+        <!-- Community Connection Trigger -->
+        <div class="interaction-box" style="text-align: center;">
+            <h3 style="margin-bottom: 0.5rem;">Community Connection</h3>
+            <p style="margin-bottom: 1.5rem;">Have a question, comment, or concern? We're here to listen and grow together.</p>
+            <button id="community-modal-trigger">question? comment? concern?</button>
             
-            <div id="public-chats" style="margin-top: 2rem;">
+            <div id="public-chats">
                 <h4>Recent Conversations</h4>
                 <!-- Chat responses from blogger will appear here -->
             </div>
@@ -91,69 +103,65 @@
     <source src="https://www.soundhelix.com/examples/mp3/SoundHelix-Song-1.mp3" type="audio/mpeg">
 </audio>
 
+<button id="back-to-top" title="Back to top">↑</button>
 <button id="music-toggle">🎧</button>
-<script>
-const text = "Latest Stories 🔥";
-let index = 0;
-let output = "";
 
-while (index < text.length) {
-    output += text.charAt(index);
-    index++;
-}
+    <script type="module" src="js/ui.js"></script>
+    <!-- Reply Modal moved out of the cookie banner -->
+    <div id="reply-modal" class="modal-overlay" style="display: none;">
+        <div class="modal-content">
+            <span class="close-button">&times;</span>
+            <h3>Reply to: <span id="modal-post-title"></span></h3>
+            <p>Your thoughts are valuable! Share your reply below.</p>
+            <form id="reply-form">
+                <input type="text" id="reply-user-name" placeholder="Your Name (Optional)">
+                <textarea id="reply-message" placeholder="Type your reply here..."></textarea>
+                <input type="hidden" id="hidden-post-id">
+                <input type="hidden" id="hidden-post-title">
+                <button type="submit" id="submit-reply-btn">Submit Reply</button>
+            </form>
+        </div>
+    </div>
 
-document.getElementById("typing-text").textContent = output;
-</script>
-<script>
-document.addEventListener("DOMContentLoaded", () => {
-    const banner = document.getElementById("cookie-banner");
-    const acceptBtn = document.getElementById("accept-cookies");
-    const declineBtn = document.getElementById("decline-cookies");
-
-    if (!banner || !acceptBtn || !declineBtn) return;
-
-    // Hide if already chosen
-    if (localStorage.getItem("cookieChoice")) {
-        banner.style.display = "none";
-    }
-
-    function hideBanner() {
-        banner.classList.add("hide");
-
-        // Wait for animation to finish, then remove
-        setTimeout(() => {
-            banner.style.display = "none";
-        }, 400);
-    }
-
-    acceptBtn.addEventListener("click", () => {
-        localStorage.setItem("cookieChoice", "accepted");
-        hideBanner();
-    });
-
-    declineBtn.addEventListener("click", () => {
-        localStorage.setItem("cookieChoice", "declined");
-        hideBanner();
-    });
-});
-</script>
     <script type="module" src="js/app.js"></script>
 
-    <div id="cookie-banner" class="cookie-banner">
-    <p>
-        We use cookies to improve your experience on LET'S TALK. By using our site, you agree to our 
-        <a href="privacy.html">Privacy Policy</a>.
-    </p>
-    <div class="cookie-actions">
-        <button id="accept-cookies">Accept</button>
-        <button id="decline-cookies" class="secondary">Decline</button>
+    <!-- User Authentication Modal -->
+    <div id="user-auth-modal" class="modal-overlay" style="display: none;">
+        <div class="modal-content">
+            <span class="close-button" id="close-auth-modal">&times;</span>
+            <h3 id="auth-modal-title">Sign In</h3>
+            <form id="auth-form">
+                <div id="signup-fields" style="display: none;">
+                    <input type="text" id="auth-first-name" placeholder="First Name" required>
+                    <input type="text" id="auth-last-name" placeholder="Last Name" required>
+                </div>
+                <input type="email" id="auth-email" placeholder="Email" required>
+                <input type="password" id="auth-password" placeholder="Password" required>
+                <button type="submit" id="auth-submit-btn">Sign In</button>
+            </form>
+            <p style="text-align: center; margin-top: 1rem;">
+                <span id="auth-toggle-text">Don't have an account?</span> 
+                <a href="#" id="auth-toggle-link" style="color: var(--primary); text-decoration: none; font-weight: 600;">Sign Up</a>
+            </p>
+            <div id="auth-error-message" style="color: var(--danger); text-align: center; margin-top: 1rem;"></div>
+        </div>
     </div>
-</div>
+
+    <!-- Cookie Banner (keep at the bottom) -->
+    <div id="cookie-banner" class="cookie-banner">
+        <p>
+            We use cookies to improve your experience on LET'S TALK. By using our site, you agree to our 
+            <a href="privacy.html">Privacy Policy</a>.
+        </p>
+        <div class="cookie-actions">
+            <button id="accept-cookies">Accept</button>
+            <button id="decline-cookies" class="secondary">Decline</button>
+        </div>
+    </div>
+
+    <footer style="text-align:center; margin-top:3rem;">
+        <a href="privacy.html">Privacy Policy</a> |
+        <a href="terms.html">Terms of Use</a>
+    </footer>
 </body>
-
-<footer style="text-align:center; margin-top:3rem;">
-    <a href="privacy.html">Privacy Policy</a> |
-    <a href="terms.html">Terms of Use</a>
-</footer>
-
 </html>

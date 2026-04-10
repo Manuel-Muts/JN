@@ -1,0 +1,73 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Member Dashboard | LET'S TALK</title>
+    <link rel="stylesheet" href="css/style.css">
+    <link rel="stylesheet" href="css/header.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+</head>
+<body>
+    <nav>
+        <div class="logo"><strong>LET'S</strong> TALK</div>
+        <div class="links">
+            <a href="admin.html" class="admin-link">Admin</a>
+            <div id="user-profile-nav" style="display: flex; align-items: center; gap: 10px;">
+                <span id="user-display-name" style="font-weight: 600;"></span>
+                <button id="user-logout-btn" class="secondary-btn" style="width: auto; margin: 0; padding: 0.4rem 1rem;">Logout</button>
+            </div>
+        </div>
+    </nav>
+
+    <div class="container">
+        <header style="text-align: center; margin-bottom: 3rem;">
+            <h1 class="glow-title">Welcome Back! ✨</h1>
+            <p>Your personal space for insights and conversations.</p>
+            <div style="max-width: 500px; margin: 2rem auto 0 auto;">
+                <input type="text" id="search-bar" placeholder="Search your stories...">
+            </div>
+        </header>
+
+        <!-- Full Blog Post Feed -->
+        <div id="blog-feed" class="blog-grid">
+            <!-- Full content injected by JS -->
+        </div>
+
+        <!-- Infinite Scroll Sentinel -->
+        <div id="infinite-scroll-sentinel" style="text-align: center; padding: 2rem 0; min-height: 50px;"></div>
+
+            </div>
+        </div>
+    </div>
+
+    <audio id="bg-music" loop>
+        <source src="https://www.soundhelix.com/examples/mp3/SoundHelix-Song-1.mp3" type="audio/mpeg">
+    </audio>
+
+    <button id="back-to-top" title="Back to top">↑</button>
+    <button id="music-toggle">🎧</button>
+
+    <!-- Reply Modal -->
+    <div id="reply-modal" class="modal-overlay" style="display: none;">
+        <div class="modal-content">
+            <span class="close-button">&times;</span>
+            <h3>Reply to: <span id="modal-post-title"></span></h3>
+            <form id="reply-form">
+                <input type="text" id="reply-user-name" placeholder="Your Name" readonly>
+                <textarea id="reply-message" placeholder="Type your reply here..."></textarea>
+                <input type="hidden" id="hidden-post-id">
+                <input type="hidden" id="hidden-post-title">
+                <button type="submit" id="submit-reply-btn">Submit Reply</button>
+            </form>
+        </div>
+    </div>
+
+    <script type="module" src="js/ui.js"></script>
+    <script type="module" src="js/app.js"></script>
+
+    <footer style="text-align:center; margin-top:3rem; padding-bottom: 2rem;">
+        <a href="privacy.html">Privacy Policy</a> |
+        <a href="terms.html">Terms of Use</a>
+    </footer>
+</body>
+</html>

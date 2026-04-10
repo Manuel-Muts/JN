@@ -8,6 +8,8 @@
     <link rel="stylesheet" href="css/style.css">
     <!-- Quill.js CSS -->
     <link href="https://cdn.quilljs.com/1.3.6/quill.snow.css" rel="stylesheet">
+    <!-- Font Awesome for Icons -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
     <!-- Cloudinary Upload Widget -->
     <script src="https://upload-widget.cloudinary.com/global/all.js" type="text/javascript"></script>
 </head>
@@ -28,34 +30,73 @@
                 <button id="logout-btn" style="background: var(--dark);">Logout</button>
             </header>
             
-            <div class="dashboard-grid">
-                <div class="main-content">
-                    <div class="interaction-box">
-                        <h2>Create a New Post</h2>
-                        <input type="text" id="post-title" placeholder="Post Title">
-                        <div id="editor" style="height: 250px; margin-bottom: 1rem;"></div> <!-- Quill editor -->
-                        <button id="upload-widget" style="background: var(--gray); margin-bottom: 1rem;">Upload Image</button>
-                        <img id="preview-img" src="" style="display:none; width: 100%; border-radius: 8px; margin: 1rem 0;">
-                        <button id="submit-post" style="width: 100%;">Publish Post</button>
-                    </div>
+            <!-- Tab Navigation Buttons -->
+            <div class="admin-tabs">
+                <button class="tab-btn active" data-tab="create-post-tab">
+                    <i class="fas fa-pen-to-square"></i> Create Post
+                </button>
+                <button class="tab-btn" data-tab="manage-posts-tab">
+                    <i class="fas fa-list-check"></i> Manage Posts
+                </button>
+                <button class="tab-btn" data-tab="questions-tab">
+                    <i class="fas fa-circle-question"></i> Questions
+                </button>
+                <button class="tab-btn" data-tab="stats-tab">
+                    <i class="fas fa-chart-line"></i> Statistics
+                </button>
+            </div>
 
-                    <h2 style="margin-top: 3rem;">Manage Existing Posts</h2>
-                    <div id="existing-posts" class="blog-grid" style="margin-top: 1rem;">
-                        <!-- Existing posts will be loaded here by JS -->
+            <!-- Tab 1: Create a New Post -->
+            <div id="create-post-tab" class="tab-content active">
+                <div class="interaction-box">
+                    <h2>Create a New Post</h2>
+                    <input type="text" id="post-title" placeholder="Post Title">
+                    <div id="editor" style="height: 250px; margin-bottom: 1rem;"></div> <!-- Quill editor -->
+                    <button id="upload-widget" style="background: var(--gray); margin-bottom: 1rem;">Upload Image</button>
+                    <img id="preview-img" src="" style="display:none; width: 100%; border-radius: 8px; margin: 1rem 0;">
+                    <button id="submit-post" style="width: 100%;">Publish Post</button>
+                </div>
+            </div>
+
+            <!-- Tab 2: Manage Existing Posts -->
+            <div id="manage-posts-tab" class="tab-content">
+                <h2>Manage Existing Posts</h2>
+                <input type="text" id="admin-search-bar" placeholder="Search posts by title..." style="margin-bottom: 1.5rem;">
+                <div id="existing-posts" class="blog-grid" style="margin-top: 1rem;"></div>
+            </div>
+
+            <!-- Tab 3: User Interactions (Questions) -->
+            <div id="questions-tab" class="tab-content">
+                <div class="interaction-box">
+                    <h2>User Interactions</h2>
+                    <div id="interactions-summary"><p>Loading interactions...</p></div>
+                    <div id="chats-list" style="margin-top: 2rem;"></div>
+                </div>
+            </div>
+
+            <!-- Tab 4: User Statistics -->
+            <div id="stats-tab" class="tab-content">
+                <div class="interaction-box">
+                    <h2>Blog-wide Statistics</h2>
+                    <div class="stats-grid" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 1.5rem; margin-top: 1.5rem;">
+                        <div class="stat-card" style="padding: 2rem; background: #f8fafc; border-radius: 12px; text-align: center; border: 1px solid #e2e8f0; box-shadow: var(--shadow);">
+                            <h4 style="margin: 0; color: var(--gray); font-size: 0.9rem; text-transform: uppercase; letter-spacing: 1px;">Most Liked Post</h4>
+                            <p id="most-liked-post-title" style="font-size: 1.1rem; font-weight: 600; color: var(--dark); margin: 1rem 0 0.5rem 0;"></p>
+                            <p id="total-likes-count" style="font-size: 3rem; font-weight: 800; color: var(--primary); margin: 0;">0</p>
+                        </div>
+                        <div class="stat-card" style="padding: 2rem; background: #f8fafc; border-radius: 12px; text-align: center; border: 1px solid #e2e8f0; box-shadow: var(--shadow);">
+                            <h4 style="margin: 0; color: var(--gray); font-size: 0.9rem; text-transform: uppercase; letter-spacing: 1px;">Most Commented Post</h4>
+                            <p id="most-commented-post-title" style="font-size: 1.1rem; font-weight: 600; color: var(--dark); margin: 1rem 0 0.5rem 0;"></p>
+                            <p id="total-comments-count" style="font-size: 3rem; font-weight: 800; color: var(--success); margin: 0;">0</p>
+                        </div>
+                    </div>
+                    <div style="margin-top: 3rem;">
+                        <h3>Top 5 Most Liked Posts</h3>
+                        <div id="top-liked-posts-list" class="blog-grid" style="margin-top: 1rem;">
+                            <!-- Top liked posts will be injected here -->
+                        </div>
                     </div>
                 </div>
-
-                <aside class="sidebar">
-                    <div class="interaction-box">
-                        <h2>User Interactions</h2>
-                        <div id="interactions-summary">
-                            <p>Loading interactions...</p>
-                        </div>
-                        <div id="chats-list" style="margin-top: 2rem;">
-                            <!-- User questions will load here -->
-                        </div>
-                    </div>
-                </aside>
             </div>
         </section>
     </div>

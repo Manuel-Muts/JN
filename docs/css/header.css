@@ -22,7 +22,7 @@ nav {
 
 /* Nav links */
 /* Style the login link as a button */
-.links a {
+.links a:not(.admin-link) {
     background: linear-gradient(135deg, var(--primary), #6366f1);
     color: white;
     padding: 0.6rem 1.4rem;
@@ -37,19 +37,19 @@ nav {
 }
 
 /* Hover effect */
-.links a:hover {
+.links a:not(.admin-link):hover {
     transform: translateY(-2px);
     box-shadow: 0 10px 25px rgba(79, 70, 229, 0.4);
     background: linear-gradient(135deg, var(--primary-hover), #4f46e5);
 }
 
 /* Click effect */
-.links a:active {
+.links a:not(.admin-link):active {
     transform: scale(0.95);
 }
 
 /* Shine animation */
-.links a::after {
+.links a:not(.admin-link)::after {
     content: "";
     position: absolute;
     top: 0;
@@ -103,6 +103,7 @@ nav {
     background: linear-gradient(120deg, transparent, rgba(79,70,229,0.2), transparent);
     opacity: 0;
     transition: opacity 0.3s ease;
+    pointer-events: none;
 }
 
 .post-card:hover::before {

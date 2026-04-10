@@ -30,6 +30,24 @@ nav {
     z-index: 100;
 }
 
+.links {
+    display: flex;
+    align-items: center;
+    gap: 1.5rem;
+}
+
+.admin-link {
+    text-decoration: none;
+    color: var(--gray);
+    font-weight: 500;
+    font-size: 0.95rem;
+    transition: color 0.2s;
+}
+
+.admin-link:hover {
+    color: var(--primary);
+}
+
 .container {
     max-width: 1000px;
     margin: 2rem auto;
@@ -65,6 +83,14 @@ nav {
     margin-bottom: 0.5rem;
 }
 
+.post-content h3 {
+    margin-top: 0;
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+}
+
 .post-card img {
     width: 100%;
     height: 180px;
@@ -95,7 +121,25 @@ nav {
     border: 1px solid #e2e8f0;
 }
 
-input, textarea {
+#public-chats {
+    max-height: 400px;
+    overflow-y: auto;
+    padding-right: 10px;
+}
+
+/* Custom Scrollbar for interaction areas */
+#public-chats::-webkit-scrollbar,
+.post-replies::-webkit-scrollbar {
+    width: 6px;
+}
+
+#public-chats::-webkit-scrollbar-thumb,
+.post-replies::-webkit-scrollbar-thumb {
+    background-color: var(--gray);
+    border-radius: 10px;
+}
+
+input, textarea, select {
     width: 100%;
     padding: 0.8rem;
     margin-bottom: 1rem;
@@ -105,7 +149,7 @@ input, textarea {
     transition: border-color 0.2s, box-shadow 0.2s;
 }
 
-input:focus, textarea:focus {
+input:focus, textarea:focus, select:focus {
     outline: none;
     border-color: var(--primary);
     box-shadow: 0 0 0 3px rgba(79, 70, 229, 0.1);
@@ -124,6 +168,13 @@ button {
 
 button:hover {
     background: var(--primary-hover);
+}
+
+.login-pill {
+    background: linear-gradient(135deg, var(--primary), #6366f1);
+    border-radius: 999px;
+    padding: 0.6rem 1.4rem;
+    box-shadow: 0 4px 12px rgba(79, 70, 229, 0.2);
 }
 
 button:disabled {
@@ -388,6 +439,37 @@ nav.scrolled {
     }
 }
 
+/* --- Like Count Animation --- */
+@keyframes likePop {
+    0% { transform: scale(1); }
+    50% { transform: scale(1.4); }
+    100% { transform: scale(1); }
+}
+
+.like-pop {
+    display: inline-block;
+    animation: likePop 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+}
+
+.floating-heart {
+    position: fixed;
+    pointer-events: none;
+    z-index: 10000;
+    font-size: 1.5rem;
+    animation: floatUp 1s cubic-bezier(0.165, 0.84, 0.44, 1) forwards;
+}
+
+@keyframes floatUp {
+    0% {
+        transform: translate(-50%, -50%) scale(0.5);
+        opacity: 1;
+    }
+    100% {
+        transform: translate(calc(-50% + var(--x-dir)), calc(-50% + var(--y-dir))) scale(1.5) rotate(20deg);
+        opacity: 0;
+    }
+}
+
 #music-toggle {
     position: fixed;
     bottom: 20px;
@@ -399,6 +481,32 @@ nav.scrolled {
     font-size: 1.2rem;
     box-shadow: var(--shadow);
     cursor: pointer;
+}
+
+#back-to-top {
+    display: none; /* Hidden by default */
+    position: fixed;
+    bottom: 80px; /* Positioned above the music toggle */
+    right: 20px;
+    z-index: 99;
+    width: 48px;
+    height: 48px;
+    border-radius: 50%;
+    background: var(--primary);
+    color: white;
+    border: none;
+    outline: none;
+    cursor: pointer;
+    font-size: 1.5rem;
+    box-shadow: var(--shadow);
+    transition: transform 0.2s, background 0.2s;
+    align-items: center;
+    justify-content: center;
+}
+
+#back-to-top:hover {
+    background: var(--primary-hover);
+    transform: scale(1.1);
 }
 
 .post-card {
@@ -416,4 +524,270 @@ button:active {
 
 .post-card:hover {
     transform: translateY(-8px) scale(1.02);
+}
+
+/* Auth Modal Specifics */
+#auth-form input {
+    margin-bottom: 0.8rem; /* Slightly less margin for more compact form */
+}
+#auth-form button {
+    margin-top: 1rem;
+}
+
+.post-description {
+    overflow: hidden;
+    transition: max-height 0.3s ease;
+}
+
+.post-description.collapsed {
+    display: -webkit-box;
+    -webkit-line-clamp: 3;
+    -webkit-box-orient: vertical;
+}
+
+.read-more-toggle {
+    color: var(--primary);
+    cursor: pointer;
+    font-weight: 600;
+    font-size: 0.9rem;
+    display: block;
+    margin-bottom: 1rem;
+}
+
+/* --- Admin Tabs Navigation --- */
+.admin-tabs {
+    display: flex;
+    gap: 1rem;
+    margin-bottom: 2rem;
+    border-bottom: 2px solid #e2e8f0;
+    padding: 0;
+    background: var(--white);
+    position: sticky;
+    top: 60px; /* Adjusted to sit right below your nav */
+    z-index: 90;
+}
+.tab-btn {
+    display: flex;
+    align-items: center;
+    gap: 0.6rem;
+    background: none;
+    color: var(--gray);
+    border: none;
+    padding: 1.2rem 1rem;
+    font-size: 1rem;
+    cursor: pointer;
+    border-radius: 0;
+    font-weight: 600;
+    transition: all 0.3s ease;
+    border-bottom: 4px solid transparent;
+    white-space: nowrap;
+}
+.tab-btn i {
+    font-size: 1.1rem;
+    transition: transform 0.2s ease;
+}
+.tab-btn:hover {
+    color: var(--primary);
+}
+.tab-btn.active {
+    color: var(--primary);
+    border-bottom: 4px solid var(--primary);
+}
+.tab-btn.active i {
+    transform: scale(1.1);
+}
+.tab-content {
+    display: none;
+    animation: fadeIn 0.3s ease;
+}
+.tab-content.active {
+    display: block;
+    padding-top: 10px;
+}
+
+/* --- Member Badge --- */
+.member-badge {
+    background-color: var(--primary);
+    color: white;
+    padding: 0.3rem 0.6rem;
+    border-radius: 4px;
+    font-size: 0.75rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    margin-left: 0.5rem;
+    white-space: nowrap; /* Prevent badge from wrapping */
+}
+
+/* --- Gated Content Styles --- */
+.cta-card {
+    background: linear-gradient(135deg, #ffffff 0%, #f8fafc 100%);
+    border: 2px dashed var(--primary);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    text-align: center;
+    min-height: 350px;
+}
+
+.cta-card i {
+    font-size: 3rem;
+    color: var(--primary);
+    margin-bottom: 1rem;
+}
+
+/* --- Modal Styles --- */
+.modal-overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: rgba(0, 0, 0, 0.6);
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    z-index: 1000;
+}
+.modal-content {
+    background: var(--white);
+    padding: 2.5rem;
+    border-radius: 12px;
+    box-shadow: var(--shadow);
+    width: 90%;
+    max-width: 500px;
+    position: relative;
+    animation: modalPop 0.3s ease-out;
+}
+.modal-content h3 {
+    margin-top: 0;
+    color: var(--dark);
+}
+.modal-content p {
+    margin-bottom: 1.5rem;
+}
+.modal-content .close-button {
+    position: absolute;
+    top: 15px;
+    right: 20px;
+    font-size: 1.8rem;
+    cursor: pointer;
+    color: var(--gray);
+}
+.modal-content .close-button:hover {
+    color: var(--dark);
+}
+
+@keyframes modalPop {
+    from { opacity: 0; transform: scale(0.95); }
+    to { opacity: 1; transform: scale(1); }
+}
+
+/* Styles for replies displayed under posts */
+.post-replies {
+    margin-top: 1.5rem;
+    padding-top: 1rem;
+    border-top: 1px solid #e2e8f0;
+    max-height: 250px;
+    overflow-y: auto;
+    padding-right: 8px;
+}
+.post-replies h4 {
+    color: var(--dark);
+    margin-bottom: 1rem;
+}
+.post-reply-bubble {
+    background: #f8fafc; /* Lighter background for replies */
+    padding: 0.8rem 1.2rem;
+    border-radius: 8px;
+    margin-bottom: 0.8rem;
+    border-left: 3px solid var(--gray);
+}
+.post-reply-bubble strong {
+    color: var(--primary);
+}
+
+.post-actions {
+    display: flex;
+    gap: 10px;
+    margin-bottom: 1rem;
+    align-items: center;
+}
+
+.like-btn {
+    background: #fee2e2;
+    color: #ef4444;
+    border: 1px solid #fecaca;
+}
+.like-btn:hover {
+    background: #fecaca;
+}
+
+.like-btn.liked {
+    background: #ef4444;
+    color: white;
+    cursor: default;
+}
+
+.toggle-replies-btn {
+    background: var(--light);
+    color: var(--dark);
+    border: 1px solid #e2e8f0;
+}
+.toggle-replies-btn:hover {
+    background: #cbd5e1;
+}
+
+.secondary-btn {
+    background: var(--light);
+    color: var(--dark);
+    border: 1px solid #e2e8f0;
+    width: 100%;
+    margin-top: 10px;
+    padding: 0.5rem;
+    font-size: 0.85rem;
+    border-radius: 6px;
+    cursor: pointer;
+    transition: background 0.2s;
+}
+.secondary-btn:hover {
+    background: #cbd5e1;
+}
+
+/* --- Loading Spinner --- */
+.spinner {
+    width: 18px;
+    height: 18px;
+    border: 2px solid rgba(255, 255, 255, 0.3);
+    border-radius: 50%;
+    border-top-color: #fff;
+    animation: spin 0.8s linear infinite;
+    display: inline-block;
+    vertical-align: middle;
+    margin-right: 8px;
+}
+
+@keyframes spin {
+    to { transform: rotate(360deg); }
+}
+
+/* Community Modal Trigger Button */
+#community-modal-trigger {
+    background: linear-gradient(135deg, var(--primary), #6366f1);
+    color: white;
+    border: none;
+    padding: 1.2rem;
+    border-radius: 10px;
+    font-weight: 700;
+    cursor: pointer;
+    width: 100%;
+    font-size: 1.1rem;
+    box-shadow: 0 4px 15px rgba(79, 70, 229, 0.3);
+    transition: all 0.3s ease;
+    margin-bottom: 2rem;
+}
+
+#community-modal-trigger:hover {
+    transform: translateY(-3px);
+    box-shadow: 0 8px 25px rgba(79, 70, 229, 0.4);
+    filter: brightness(1.1);
 }

@@ -2,20 +2,77 @@ rules_version = '2';
 
 service cloud.firestore {
   match /databases/{database}/documents {
-    // Helper function to check if the user is the authorized admin
+
+    // Helper functions
+    function getUserData() {
+      let path = /databases/$(database)/documents/users/$(request.auth.uid);
+      return exists(path) ? get(path).data : {};
+    }
+
     function isAdmin() {
-      return request.auth != null && request.auth.token.email == "your-admin-email@example.com";
+      return request.auth != null && getUserData().get('role', 'user') == 'admin';
+    }
+
+    function isActiveClient() {
+      return request.auth != null && getUserData().get('suspended', false) == false;
     }
 
     // Blog Posts: Anyone can read, only the blogger (admin) can write.
     match /posts/{postId} {
       allow read: if true;
-      allow create, update, delete: if isAdmin();
+      allow create, delete: if isAdmin();
+
+      // Allow admin full updates; allow users to update ONLY the 'likes' field
+      allow update: if isAdmin() || (
+        request.auth != null && 
+        request.resource.data.diff(resource.data).affectedKeys().hasOnly(['likes'])
+      );
+      
     }
 
-    // Chats: Anyone can send a question and read replies, only the blogger can reply/delete.
+    // Users: Users can only read/update their own data or be managed by an admin
+    match /users/{userId} {
+      allow read, update: if request.auth != null && (request.auth.uid == userId || isAdmin());
+      allow create: if request.auth != null && (request.auth.uid == userId || isAdmin());
+      allow delete: if isAdmin();
+    }
+
+    // Chats: Users must be signed in to send questions, read replies, or post comments.
     match /chats/{chatId} {
-      allow read, create: if true;
+      allow read, create: if request.auth != null;
+      allow update, delete: if isAdmin();
+    }
+
+    // --- Business System Rules ---
+
+    // Items & Orders
+    match /items/{itemId} {
+      allow read, update, delete: if isAdmin() || (isActiveClient() && resource.data.uid == request.auth.uid);
+      allow create: if isAdmin() || (isActiveClient() && request.resource.data.uid == request.auth.uid);
+    }
+
+    match /orders/{orderId} {
+      allow read, update, delete: if isAdmin() || (isActiveClient() && resource.data.uid == request.auth.uid);
+      allow create: if isAdmin() || (isActiveClient() && request.resource.data.uid == request.auth.uid);
+    }
+
+    // Sales
+    match /sales/{saleId} {
+      allow read, update: if isAdmin() || (isActiveClient() && resource.data.uid == request.auth.uid);
+      allow create: if isAdmin() || (isActiveClient() && request.resource.data.uid == request.auth.uid);
+      allow delete: if isAdmin();
+    }
+
+    // Sales Summaries
+    match /salesSummaries/{summaryId} {
+      allow read, update, create: if isAdmin() || (isActiveClient() && request.auth.uid == summaryId);
+      allow delete: if isAdmin();
+    }
+
+    // Payments
+    match /payments/{paymentId} {
+      allow read: if isAdmin() || (request.auth != null && resource.data.uid == request.auth.uid);
+      allow create: if isAdmin() || (isActiveClient() && request.resource.data.uid == request.auth.uid);
       allow update, delete: if isAdmin();
     }
   }
