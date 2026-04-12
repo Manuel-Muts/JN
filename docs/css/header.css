@@ -93,7 +93,6 @@ nav {
 }
 .post-card {
     position: relative;
-    overflow: hidden;
 }
 
 .post-card::before {

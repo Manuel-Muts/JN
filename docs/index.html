@@ -76,25 +76,50 @@
             </div>
         </header>
 
-        <!-- Blog Post Feed -->
-        <div id="blog-feed" class="blog-grid">
-            <!-- Posts injected by JS -->
+        <!-- Client Tab Navigation -->
+        <div class="admin-tabs client-tabs" style="margin-bottom: 2rem;">
+            <button class="tab-btn active" data-tab="stories-tab">Stories</button>
+            <button class="tab-btn" data-tab="community-tab">Community Connection</button>
+            <button id="live-chat-tab-btn" class="tab-btn" data-tab="live-chat-section" style="display: none;">Live Chat</button>
         </div>
 
-        <!-- Infinite Scroll Sentinel -->
-        <div id="infinite-scroll-sentinel" style="text-align: center; padding: 2rem 0; min-height: 50px;">
-            <!-- Spinner/Status injected by JS -->
+        <!-- Tab content: Blog Stories -->
+        <div id="stories-tab" class="tab-content active">
+            <div id="blog-feed" class="blog-grid">
+                <!-- Posts injected by JS -->
+            </div>
+            <!-- Infinite Scroll Sentinel -->
+            <div id="infinite-scroll-sentinel" style="text-align: center; padding: 2rem 0; min-height: 50px;">
+                <!-- Spinner/Status injected by JS -->
+            </div>
         </div>
 
-        <!-- Community Connection Trigger -->
-        <div class="interaction-box" style="text-align: center;">
-            <h3 style="margin-bottom: 0.5rem;">Community Connection</h3>
-            <p style="margin-bottom: 1.5rem;">Have a question, comment, or concern? We're here to listen and grow together.</p>
-            <button id="community-modal-trigger">question? comment? concern?</button>
-            
-            <div id="public-chats">
-                <h4>Recent Conversations</h4>
-                <!-- Chat responses from blogger will appear here -->
+        <!-- Tab content: Community Connection -->
+        <div id="community-tab" class="tab-content">
+            <div class="interaction-box">
+                <h3 style="margin-bottom: 0.5rem;">Community Connection</h3>
+                <p style="margin-bottom: 1.5rem;">Have a question, comment, or concern? We're here to listen and grow together.</p>
+                <button id="community-modal-trigger">question? comment? concern?</button>
+                
+                <div id="public-chats">
+                    <h4>Recent Conversations</h4>
+                    <!-- Chat responses from blogger will appear here -->
+                </div>
+            </div>
+        </div>
+
+        <!-- Tab content: Live Chat (Separate Section) -->
+        <div id="live-chat-section" class="tab-content">
+            <div class="interaction-box">
+                <h3 style="margin-bottom: 1rem;">Live Community Chat</h3>
+                <div id="live-messages-container" style="height: 450px; overflow-y: auto; display: flex; flex-direction: column; gap: 10px; padding: 1rem; background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; margin-bottom: 1rem;">
+                    <!-- Real-time messages will appear here -->
+                </div>
+                <div id="typing-indicator" style="font-size: 0.8rem; color: var(--gray); height: 1.2rem; margin-bottom: 0.5rem; font-style: italic;"></div>
+                <form id="live-chat-form" style="display: flex; gap: 10px;">
+                    <input type="text" id="live-chat-input" placeholder="Say something to the community..." style="margin: 0; flex: 1;">
+                    <button type="submit">Send Message</button>
+                </form>
             </div>
         </div>
     </div>
@@ -114,7 +139,6 @@
             <h3>Reply to: <span id="modal-post-title"></span></h3>
             <p>Your thoughts are valuable! Share your reply below.</p>
             <form id="reply-form">
-                <input type="text" id="reply-user-name" placeholder="Your Name (Optional)">
                 <textarea id="reply-message" placeholder="Type your reply here..."></textarea>
                 <input type="hidden" id="hidden-post-id">
                 <input type="hidden" id="hidden-post-title">

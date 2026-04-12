@@ -64,9 +64,10 @@ nav {
 .post-card {
     background: var(--white);
     border-radius: 12px;
-    overflow: hidden;
+    /* overflow: hidden; Removed to allow share menu to pop up */
     box-shadow: var(--shadow);
     transition: transform 0.2s;
+    scroll-margin-top: 100px; /* Offset for the sticky header */
 }
 
 .post-card:hover {
@@ -95,6 +96,7 @@ nav {
     width: 100%;
     height: 180px;
     object-fit: cover;
+    border-radius: 12px 12px 0 0;
     border-bottom: 1px solid #f1f5f9;
 }
 
@@ -557,7 +559,7 @@ button:active {
 /* --- Admin Tabs Navigation --- */
 .admin-tabs {
     display: flex;
-    gap: 1rem;
+    gap: 0.5rem;
     margin-bottom: 2rem;
     border-bottom: 2px solid #e2e8f0;
     padding: 0;
@@ -565,7 +567,22 @@ button:active {
     position: sticky;
     top: 60px; /* Adjusted to sit right below your nav */
     z-index: 90;
+    overflow-x: auto;
+    scrollbar-width: none;
+    -ms-overflow-style: none;
+    -webkit-overflow-scrolling: touch;
 }
+
+.client-tabs {
+    background: transparent;
+    border-bottom: 2px solid #e2e8f0;
+    position: static;
+}
+
+.admin-tabs::-webkit-scrollbar {
+    display: none;
+}
+
 .tab-btn {
     display: flex;
     align-items: center;
@@ -573,15 +590,25 @@ button:active {
     background: none;
     color: var(--gray);
     border: none;
-    padding: 1.2rem 1rem;
-    font-size: 1rem;
+    padding: 1rem 0.8rem;
+    font-size: 0.9rem;
     cursor: pointer;
     border-radius: 0;
     font-weight: 600;
     transition: all 0.3s ease;
     border-bottom: 4px solid transparent;
     white-space: nowrap;
+    flex-shrink: 0;
 }
+
+@media (min-width: 768px) {
+    .admin-tabs { gap: 1rem; }
+    .tab-btn { 
+        padding: 1.2rem 1rem; 
+        font-size: 1rem; 
+    }
+}
+
 .tab-btn i {
     font-size: 1.1rem;
     transition: transform 0.2s ease;
@@ -711,6 +738,7 @@ button:active {
     gap: 10px;
     margin-bottom: 1rem;
     align-items: center;
+    flex-wrap: wrap; /* Ensures buttons wrap on mobile instead of disappearing */
 }
 
 .like-btn {
@@ -736,6 +764,73 @@ button:active {
 .toggle-replies-btn:hover {
     background: #cbd5e1;
 }
+
+.highlight-post {
+    animation: pulse-highlight 2s ease-out;
+    border: 2px solid var(--primary);
+}
+
+@keyframes pulse-highlight {
+    0% { box-shadow: 0 0 0 0 rgba(79, 70, 229, 0.7); }
+    70% { box-shadow: 0 0 0 20px rgba(79, 70, 229, 0); }
+    100% { box-shadow: 0 0 0 0 rgba(79, 70, 229, 0); }
+}
+
+.share-btn {
+    background: var(--light);
+    color: var(--primary);
+    border: 1px solid var(--primary);
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+.share-btn:hover {
+    background: var(--primary);
+    color: white;
+}
+
+.share-container {
+    position: relative;
+    display: inline-block;
+}
+
+.share-menu {
+    position: absolute;
+    bottom: calc(100% + 10px);
+    left: 50%;
+    transform: translateX(-50%);
+    background: var(--white);
+    box-shadow: var(--shadow);
+    border-radius: 8px;
+    padding: 0.6rem 0.8rem;
+    display: none;
+    gap: 15px;
+    z-index: 100;
+    border: 1px solid #e2e8f0;
+    white-space: nowrap;
+    align-items: center;
+}
+
+.share-menu.active {
+    display: flex;
+    animation: fadeIn 0.2s ease-out;
+}
+
+.share-item {
+    color: var(--gray);
+    font-size: 1.2rem;
+    cursor: pointer;
+    transition: color 0.2s, transform 0.2s;
+    text-decoration: none;
+}
+
+.share-item:hover {
+    transform: scale(1.2);
+}
+
+.share-item.whatsapp:hover { color: #25D366; }
+.share-item.twitter:hover { color: #1DA1F2; }
+.share-item.copy:hover { color: var(--primary); }
 
 .secondary-btn {
     background: var(--light);
@@ -789,5 +884,120 @@ button:active {
 #community-modal-trigger:hover {
     transform: translateY(-3px);
     box-shadow: 0 8px 25px rgba(79, 70, 229, 0.4);
+}
+/* Live Chat Styles */
+.live-msg {
+    max-width: 80%;
+    padding: 0.6rem 1rem;
+    border-radius: 12px;
+    font-size: 0.9rem;
+    line-height: 1.4;
+}
+.live-msg.me {
+    align-self: flex-end;
+    background: var(--primary);
+    color: white;
+    border-bottom-right-radius: 2px;
+}
+.live-msg.other {
+    align-self: flex-start;
+    background: #e2e8f0;
+    color: var(--dark);
+    border-bottom-left-radius: 2px;
+}
+/* Private DM Specifics */
+.dm-msg {
+    max-width: 85%;
+    padding: 0.8rem;
+    border-radius: 10px;
+    font-size: 0.85rem;
+    position: relative;
+}
+.dm-msg.admin { align-self: flex-start; background: #ffffff; border: 1px solid #e2e8f0; }
+.dm-msg.user { align-self: flex-end; background: #dcf8c6; border: 1px solid #c5e1a5; }
+
+.online-user-item {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 0.85rem;
+    margin-bottom: 8px;
     filter: brightness(1.1);
+}
+
+/* Community Connection Stream Styles */
+.conversation-stream {
+    text-align: left;
+    margin-top: 1.5rem;
+}
+.stream-item {
+    border-bottom: 1px solid #e2e8f0;
+    padding: 1rem 0;
+}
+.slide-wrapper {
+    position: relative;
+    overflow: hidden;
+    user-select: none;
+    touch-action: pan-y;
+    margin-bottom: 0.4rem;
+}
+.slide-content {
+    position: relative;
+    z-index: 2;
+    background: var(--white);
+    transition: transform 0.2s cubic-bezier(0.25, 0.46, 0.45, 0.94);
+    width: 100%;
+}
+.slide-reply-indicator {
+    position: absolute;
+    left: 10px;
+    top: 50%;
+    transform: translateY(-50%);
+    color: var(--primary);
+    font-size: 1.2rem;
+    z-index: 1;
+    opacity: 0;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-weight: 800;
+    font-size: 0.75rem;
+}
+.stream-item:last-child {
+    border-bottom: none;
+}
+.stream-header {
+    display: flex;
+    justify-content: space-between;
+    margin-bottom: 0.5rem;
+    align-items: center;
+}
+.stream-author {
+    font-weight: 700;
+    font-size: 0.9rem;
+    color: var(--dark);
+}
+.stream-date {
+    color: var(--gray);
+    font-size: 0.75rem;
+}
+.stream-text {
+    margin: 0 0 0.6rem 0;
+    color: #334155;
+    font-size: 0.9rem;
+    line-height: 1.4;
+}
+.stream-author-reply {
+    padding-left: 1rem;
+    font-size: 0.85rem;
+    border-left: 2px solid var(--primary);
+    color: var(--dark);
+}
+.reply-badge {
+    display: block;
+    font-weight: 700;
+    color: var(--primary);
+    text-transform: uppercase;
+    font-size: 0.65rem;
+    margin-bottom: 0.1rem;
 }

@@ -23,7 +23,7 @@
             <a href="index.html" style="display: block; margin-top: 1rem; font-size: 1.2rem;">Back to Home</a>
             <a href="#" id="forgot-password-link">Forgot Password?</a>
         </section>
-
+             <div id="admin-typing-indicator"></div>
         <section id="admin-panel" style="display: none;">
             <header style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 2rem;">
                 <h1>Dashboard</h1>
@@ -43,6 +43,9 @@
                 </button>
                 <button class="tab-btn" data-tab="stats-tab">
                     <i class="fas fa-chart-line"></i> Statistics
+                </button>
+                <button class="tab-btn" data-tab="live-chat-tab">
+                    <i class="fas fa-comments"></i> Live Chat
                 </button>
             </div>
 
@@ -97,6 +100,31 @@
                         </div>
                     </div>
                 </div>
+            </div>
+
+            <!-- Tab 5: Live Community Chat -->
+            <div id="live-chat-tab" class="tab-content">
+                <div class="interaction-box" style="position: sticky; top: 125px; z-index: 85; margin-bottom: 1.5rem; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.1); border-bottom: 2px solid var(--primary);">
+                    <h3 style="margin: 0 0 0.8rem 0; font-size: 1.1rem;">Online Now (<span id="admin-online-count">0</span>)</h3>
+                    <div id="admin-online-users-list" style="display: flex; flex-wrap: wrap; gap: 10px; max-height: 120px; overflow-y: auto; padding-bottom: 5px;">
+                        <!-- Online users will be dynamically listed here -->
+                    </div>
+                </div>
+
+                <div class="interaction-box">
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem;">
+                        <h2 id="admin-chat-header-title" style="margin: 0;">Select a Conversation</h2>
+                    </div>
+                    <div id="admin-live-messages" style="height: 450px; overflow-y: auto; display: flex; flex-direction: column; gap: 10px; padding: 1rem; background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; margin-bottom: 1rem;">
+                        <!-- Messages injected by JS -->
+                    </div>
+                    <form id="admin-live-chat-form" style="display: flex; gap: 10px;">
+                        <input type="text" id="admin-live-chat-input" placeholder="Post a message as Admin..." style="margin: 0; flex: 1;">
+                        <button type="submit">Send</button>
+                    </form>
+                </div>
+            </div>
+
             </div>
         </section>
     </div>

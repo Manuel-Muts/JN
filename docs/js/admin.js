@@ -1,6 +1,7 @@
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js";
 import { getAuth, signInWithEmailAndPassword, onAuthStateChanged, signOut } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-auth.js";
 import { getFirestore, collection, addDoc, query, orderBy, getDocs, updateDoc, doc, onSnapshot, deleteDoc, getDoc, serverTimestamp, where, getCountFromServer, limit, startAfter } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
+import { getDatabase, ref, onValue, set, onDisconnect, push, serverTimestamp as rdbTimestamp, limitToLast, query as rdbQuery, off } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-database.js";
 import { SharedComponents } from "./components.js";
 
 const firebaseConfig = {
@@ -15,6 +16,29 @@ const firebaseConfig = {
 const app = initializeApp(firebaseConfig);
 const auth = getAuth(app);
 const db = getFirestore(app);
+const rdb = getDatabase(app);
+
+// Helper for character limit truncation
+const POST_PREVIEW_LIMIT = 150;
+
+function getSnippet(content, limit = POST_PREVIEW_LIMIT) {
+    const tempDiv = document.createElement("div");
+    tempDiv.innerHTML = content || "";
+    const plainText = tempDiv.textContent || tempDiv.innerText || "";
+    if (plainText.length <= limit) return content;
+    return plainText.substring(0, limit) + "...";
+}
+
+/**
+ * Invalidates admin data caches to ensure fresh statistics and lists.
+ */
+function invalidateAdminCaches() {
+    adminAllPosts = [];
+    adminAllChats = [];
+    adminGeneralChats = [];
+    adminStatsCache = null;
+    adminTopLikedCache = null;
+}
 
 // Initialize Quill editor
 const quill = new Quill('#editor', {
@@ -25,15 +49,25 @@ const quill = new Quill('#editor', {
 
 let uploadedImageUrl = "";
 let editingPostId = null; // To keep track of the post being edited
+let postIdToDelete = null; // To keep track of the post pending deletion
 let activeReplyListener = null; // Unsubscribe function for the modal listener
 let globalChatsListener = null; // Live listener for the general questions tab
 let adminAllPosts = []; // Local storage for search filtering
 let adminAllChats = []; // Cache for statistics
 let adminGeneralChats = []; // Cache for general questions
 let adminCommentCounts = {}; // Stores counts locally: { postId: count }
+let adminStatsCache = null; // Cache for calculated summary stats
+let adminTopLikedCache = null; // Cache for top 5 posts list
 let adminCommentCountListeners = {}; // Stores unsubscribe functions
+let adminPresenceRef = null;
+let isInitialAdminLiveLoad = true;
+const chatNotification = new Audio('https://assets.mixkit.co/active_storage/sfx/2358/2358-preview.mp3');
+let activeAdminLiveChatRef = null;
+let activeAdminTypingRef = null;
 let tabsInitialized = false;
 const ADMIN_CHATS_PER_PAGE = 10;
+let activeTargetUserId = null;
+let presenceInitialized = false;
 let adminChatPagination = { lastDoc: null, hasMore: true };
 
 // --- Tab Navigation Logic ---
@@ -61,6 +95,9 @@ function setupTabs() {
             if (target === 'questions-tab') {
                 loadAdminChats();
             }
+            if (target === 'live-chat-tab') {
+                // Live chat is handled by setupAdminLiveChat listener
+            }
         });
     });
 
@@ -80,94 +117,110 @@ async function loadStatistics() {
         if (commentsDisplay) commentsDisplay.textContent = '0';
         if (mostCommentedPostTitleDisplay) mostCommentedPostTitleDisplay.textContent = 'N/A';
 
-        // 1. Ensure posts are loaded into cache
-        if (adminAllPosts.length === 0) {
-            const postsSnapshot = await getDocs(query(collection(db, "posts"), orderBy("createdAt", "desc")));
-            adminAllPosts = postsSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+        if (adminStatsCache) {
+            renderStatsUI(adminStatsCache);
+            return;
         }
 
-        // 2. Ensure chats are loaded into cache
+        // 1. Get the single most liked post via query
+        const mostLikedQuery = query(collection(db, "posts"), orderBy("likes", "desc"), limit(1));
+        const mostLikedSnap = await getDocs(mostLikedQuery);
+
+        // 2. Handle Most Commented (Requires fetching chats as there is no commentCount field on posts yet)
         if (adminAllChats.length === 0) {
             const chatsSnapshot = await getDocs(collection(db, "chats"));
             adminAllChats = chatsSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
         }
 
-        let mostLikedPost = { title: 'N/A', likes: -1 };
-        adminAllPosts.forEach(postData => {
-            const likes = postData.likes || 0;
-            if (likes > mostLikedPost.likes) {
-                mostLikedPost = { title: postData.title, likes: likes };
-            }
-        });
-
-        if (likesDisplay) likesDisplay.textContent = mostLikedPost.likes > -1 ? mostLikedPost.likes : 0;
-        if (mostLikedPostTitleDisplay) mostLikedPostTitleDisplay.textContent = mostLikedPost.title;
-
         const commentCountsByPost = {}; // { postId: count }
-        const postTitlesById = {}; // { postId: title }
-        adminAllPosts.forEach(post => postTitlesById[post.id] = post.title);
-
         adminAllChats.forEach(chat => {
             const postId = chat.postId;
-            if (postId && postTitlesById[postId]) { // Only count comments linked to existing posts
+            if (postId) {
                 commentCountsByPost[postId] = (commentCountsByPost[postId] || 0) + 1;
             }
         });
 
-        let mostCommentedPost = { title: 'N/A', comments: -1 };
+        let mostCommentedPost = { id: null, comments: -1 };
         for (const postId in commentCountsByPost) {
             if (commentCountsByPost[postId] > mostCommentedPost.comments) {
-                mostCommentedPost = { title: postTitlesById[postId], comments: commentCountsByPost[postId] };
+                mostCommentedPost = { id: postId, comments: commentCountsByPost[postId] };
             }
         }
 
-        if (commentsDisplay) commentsDisplay.textContent = mostCommentedPost.comments > -1 ? mostCommentedPost.comments : 0;
-        if (mostCommentedPostTitleDisplay) mostCommentedPostTitleDisplay.textContent = mostCommentedPost.title;
+        const statsToCache = {
+            mostLikedTitle: !mostLikedSnap.empty ? mostLikedSnap.docs[0].data().title : 'N/A',
+            mostLikedCount: !mostLikedSnap.empty ? (mostLikedSnap.docs[0].data().likes || 0) : 0,
+            mostCommentedId: mostCommentedPost.id,
+            mostCommentedCount: mostCommentedPost.comments > -1 ? mostCommentedPost.comments : 0,
+            mostCommentedTitle: 'N/A'
+        };
+
+        if (statsToCache.mostCommentedId) {
+            const postSnap = await getDoc(doc(db, "posts", statsToCache.mostCommentedId));
+            statsToCache.mostCommentedTitle = postSnap.exists() ? postSnap.data().title : 'Deleted Post';
+        }
+
+        adminStatsCache = statsToCache;
+        renderStatsUI(adminStatsCache);
     } catch (err) {
         console.error("Error loading statistics:", err);
     }
+}
+
+function renderStatsUI(stats) {
+    const likesDisplay = document.getElementById('total-likes-count');
+    const mostLikedPostTitleDisplay = document.getElementById('most-liked-post-title');
+    const commentsDisplay = document.getElementById('total-comments-count');
+    const mostCommentedPostTitleDisplay = document.getElementById('most-commented-post-title');
+
+    if (likesDisplay) likesDisplay.textContent = stats.mostLikedCount;
+    if (mostLikedPostTitleDisplay) mostLikedPostTitleDisplay.textContent = stats.mostLikedTitle;
+    if (commentsDisplay) commentsDisplay.textContent = stats.mostCommentedCount;
+    if (mostCommentedPostTitleDisplay) mostCommentedPostTitleDisplay.textContent = stats.mostCommentedTitle;
 }
 
 async function loadTopLikedPosts() {
     const topPostsList = document.getElementById('top-liked-posts-list');
     if (!topPostsList) return;
 
+    if (adminTopLikedCache) {
+        renderTopLikedUI(adminTopLikedCache);
+        return;
+    }
+
     topPostsList.innerHTML = '<p style="text-align: center;">Loading top posts...</p>';
 
     try {
-        // Use cache if available
-        let topPosts;
-        if (adminAllPosts.length > 0) {
-            topPosts = [...adminAllPosts].sort((a, b) => (b.likes || 0) - (a.likes || 0)).slice(0, 5);
-        } else {
-            const q = query(collection(db, "posts"), orderBy("likes", "desc"), limit(5));
-            const querySnapshot = await getDocs(q);
-            topPosts = querySnapshot.docs.map(doc => doc.data());
-        }
-
-        topPostsList.innerHTML = ''; // Clear loading indicator
-
-        if (topPosts.length === 0) {
-            topPostsList.innerHTML = '<p style="text-align: center; color: var(--gray);">No posts with likes yet.</p>';
-            return;
-        }
-
-        topPosts.forEach(post => {
-            const postCard = document.createElement('div');
-            postCard.className = 'post-card';
-            postCard.innerHTML = `
-                <img src="${post.image || 'https://via.placeholder.com/400'}" alt="Post Image">
-                <div class="post-content">
-                    <h3>${post.title}</h3>
-                    <p>❤️ ${post.likes || 0} Likes</p>
-                </div>
-            `;
-            topPostsList.appendChild(postCard);
-        });
+        // Always fetch only the top 5 from Firestore
+        const q = query(collection(db, "posts"), orderBy("likes", "desc"), limit(5));
+        const querySnapshot = await getDocs(q);
+        adminTopLikedCache = querySnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+        renderTopLikedUI(adminTopLikedCache);
     } catch (err) {
         console.error("Error loading top liked posts:", err);
         topPostsList.innerHTML = '<p style="text-align: center; color: var(--danger);">Failed to load top posts.</p>';
     }
+}
+
+function renderTopLikedUI(posts) {
+    const topPostsList = document.getElementById('top-liked-posts-list');
+    topPostsList.innerHTML = '';
+    if (posts.length === 0) {
+        topPostsList.innerHTML = '<p style="text-align: center; color: var(--gray);">No posts with likes yet.</p>';
+        return;
+    }
+    posts.forEach(post => {
+        const postCard = document.createElement('div');
+        postCard.className = 'post-card';
+        postCard.innerHTML = `
+            <img src="${post.image || 'https://via.placeholder.com/400'}" alt="Post Image">
+            <div class="post-content">
+                <h3>${post.title}</h3>
+                <p>❤️ ${post.likes || 0} Likes</p>
+            </div>
+        `;
+        topPostsList.appendChild(postCard);
+    });
 }
 
 // --- 1. Authentication Logic ---
@@ -204,6 +257,9 @@ document.getElementById('login-btn').addEventListener('click', async () => {
 // Inject and then select elements
 SharedComponents.inject('logoutModal');
 SharedComponents.inject('adminReplyModal');
+SharedComponents.inject('publishConfirmModal');
+SharedComponents.inject('publishSuccessModal');
+SharedComponents.inject('deleteConfirmModal');
 const logoutConfirmModal = document.getElementById('logout-confirm-modal');
 const confirmLogoutBtn = document.getElementById('confirm-logout-btn');
 const cancelLogoutBtn = document.getElementById('cancel-logout-btn');
@@ -230,19 +286,61 @@ document.getElementById('close-admin-reply-modal')?.addEventListener('click', ()
     }
 });
 
+// Handle Publish Confirm Modal Buttons
+document.getElementById('cancel-publish-btn')?.addEventListener('click', () => {
+    document.getElementById('publish-confirm-modal').style.display = 'none';
+});
+
+document.getElementById('confirm-publish-btn')?.addEventListener('click', () => {
+    document.getElementById('publish-confirm-modal').style.display = 'none';
+    // Trigger the actual save logic
+    executePublish();
+});
+
+// Handle Publish Success Modal Button
+document.getElementById('close-success-modal-btn')?.addEventListener('click', () => {
+    document.getElementById('publish-success-modal').style.display = 'none';
+    clearPostForm();
+});
+
+// Handle Delete Confirm Modal Buttons
+document.getElementById('cancel-delete-btn')?.addEventListener('click', () => {
+    document.getElementById('delete-confirm-modal').style.display = 'none';
+    postIdToDelete = null;
+});
+
+document.getElementById('confirm-delete-btn')?.addEventListener('click', async () => {
+    if (postIdToDelete) {
+        const deleteBtn = document.getElementById('confirm-delete-btn');
+        deleteBtn.disabled = true;
+        await deleteDoc(doc(db, "posts", postIdToDelete));
+        invalidateAdminCaches();
+        loadExistingPosts(true);
+        document.getElementById('delete-confirm-modal').style.display = 'none';
+        deleteBtn.disabled = false;
+        postIdToDelete = null;
+    }
+});
+
 onAuthStateChanged(auth, async (user) => {
     const loginSec = document.getElementById('login-section');
     const adminPanel = document.getElementById('admin-panel');
     if (user) {
         try {
             const userDoc = await getDoc(doc(db, "users", user.uid));
-            if (userDoc.exists() && userDoc.data().role === 'admin') {
+            const userData = userDoc.data();
+            if (userDoc.exists() && userData.role === 'admin') {
                 loginSec.style.display = "none";
                 adminPanel.style.display = "block";
                 setupInteractionsSummary();
                 loadAdminChats(false);
                 loadExistingPosts();
                 setupTabs(); // Initialize tabs after panel is visible
+                setupAdminLiveChat(user);
+                if (!presenceInitialized) {
+                    setupAdminPresence(user, `${userData.firstName || ''} ${userData.lastName || ''}`.trim() || "Admin");
+                    presenceInitialized = true;
+                }
             } else {
                 loginSec.style.display = "block";
                 adminPanel.style.display = "none";
@@ -265,13 +363,197 @@ onAuthStateChanged(auth, async (user) => {
         adminCommentCounts = {};
         adminAllChats = []; // Clear cache on logout
         adminGeneralChats = []; // Clear cache on logout
+        adminStatsCache = null;
+        adminTopLikedCache = null;
         if (globalChatsListener) globalChatsListener();
         globalChatsListener = null;
+
+        // Cleanup Realtime Database listeners
+        if (activeAdminLiveChatRef) off(activeAdminLiveChatRef);
+        if (activeAdminTypingRef) off(activeAdminTypingRef);
+        if (adminPresenceRef) off(adminPresenceRef);
+        presenceInitialized = false;
+        activeAdminLiveChatRef = null;
+        activeAdminTypingRef = null;
+        adminPresenceRef = null;
+        activeTargetUserId = null;
         
         document.getElementById('email').value = '';
         document.getElementById('password').value = '';
     }
 });
+
+/**
+ * Tracks admin presence and listens for online users
+ */
+function setupAdminPresence(adminUser, adminName) {
+    const statusRef = ref(rdb, `status/${adminUser.uid}`);
+    const connectedRef = ref(rdb, '.info/connected');
+    const presenceList = document.getElementById('admin-online-users-list');
+    const onlineCountDisplay = document.getElementById('admin-online-count');
+
+    // 1. Mark Admin as online so users can see them
+    onValue(connectedRef, (snap) => {
+        if (snap.val() === true) {
+            onDisconnect(statusRef).set({
+                online: false,
+                lastChanged: rdbTimestamp()
+            });
+            set(statusRef, {
+                online: true,
+                name: adminName,
+                lastChanged: rdbTimestamp()
+            });
+        }
+    });
+
+    // 2. Listen for all online users (to display to admin)
+    adminPresenceRef = ref(rdb, 'status');
+    onValue(adminPresenceRef, (snap) => {
+        if (!presenceList) return;
+        
+        presenceList.innerHTML = "";
+        let count = 0;
+        
+        snap.forEach((child) => {
+            const val = child.val();
+            if (val.online) {
+                count++;
+                const item = document.createElement('div');
+                item.className = "online-user-item"; 
+                item.style.padding = "0.4rem 0.8rem";
+                item.style.border = "1px solid #e2e8f0";
+                item.style.borderRadius = "20px";
+                item.style.background = "#f8fafc";
+                item.style.display = "flex";
+                item.style.alignItems = "center";
+                item.style.gap = "10px";
+                item.innerHTML = `
+                    <span style="white-space: nowrap; font-size: 0.85rem;"><i class="fas fa-circle" style="color: var(--success); font-size: 0.6rem; margin-right: 5px;"></i> ${val.name || 'Anonymous'}</span>
+                    ${child.key !== adminUser.uid ? `<button class="private-chat-btn" data-uid="${child.key}" data-name="${val.name || 'User'}" style="padding: 0.2rem 0.5rem; font-size: 0.7rem; margin: 0;">Chat</button>` : ''}
+                `;
+                presenceList.appendChild(item);
+
+                const chatBtn = item.querySelector('.private-chat-btn');
+                if (chatBtn) chatBtn.onclick = () => setupAdminLiveChat(adminUser, child.key, val.name || "User");
+            }
+        });
+
+        if (onlineCountDisplay) onlineCountDisplay.textContent = count;
+    });
+}
+
+/**
+ * Shared Live Chat Logic for Admin
+ * (Note: You'll need to add the same HTML structure to admin.html for this to render)
+ */
+function setupAdminLiveChat(adminUser, targetUserId = null, targetUserName = null) {
+    const msgContainer = document.getElementById('admin-live-messages');
+    const chatForm = document.getElementById('admin-live-chat-form');
+    const chatInput = document.getElementById('admin-live-chat-input');
+    const typingIndicator = document.getElementById('admin-typing-indicator');
+    const headerTitle = document.getElementById('admin-chat-header-title');
+
+    activeTargetUserId = targetUserId;
+
+    if (targetUserId) {
+        if (headerTitle) headerTitle.textContent = `Chat with ${targetUserName}`;
+        chatForm.style.display = "flex";
+    } else {
+        if (headerTitle) headerTitle.textContent = "Select a Conversation";
+        msgContainer.innerHTML = `<div style="text-align:center; padding: 3rem 1rem; color: var(--gray);">
+            <i class="fas fa-comments" style="font-size: 3rem; margin-bottom: 1rem; opacity: 0.3;"></i>
+            <p>Please select an online user or a recent thread to start a 1-on-1 conversation.</p>
+        </div>`;
+        chatForm.style.display = "none";
+        return;
+    }
+
+    if (!msgContainer || !chatForm) return;
+
+    const chatPath = `private_chats/${targetUserId}`;
+
+    // Clean up existing listeners before starting a new one
+    if (activeAdminLiveChatRef) off(activeAdminLiveChatRef);
+    if (activeAdminTypingRef) off(activeAdminTypingRef);
+    isInitialAdminLiveLoad = true;
+
+    activeAdminLiveChatRef = rdbQuery(ref(rdb, chatPath), limitToLast(50));
+    onValue(activeAdminLiveChatRef, (snap) => {
+        let lastMsgUid = null;
+        msgContainer.innerHTML = "";
+        snap.forEach((child) => {
+            const msg = child.val();
+            lastMsgUid = msg.uid;
+            const timeStr = msg.timestamp ? new Date(msg.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '';
+            
+            const div = document.createElement('div');
+            const isMe = msg.uid === adminUser.uid;
+            div.className = `live-msg ${isMe ? 'me' : 'other'}`;
+            div.style.padding = "10px";
+            div.style.marginBottom = "5px";
+            div.style.borderRadius = "8px";
+            div.style.background = isMe ? "var(--primary)" : "#eee";
+            div.style.color = isMe ? "white" : "black";
+            div.innerHTML = `<small style="display:block; opacity: 0.8; font-size: 0.7rem; margin-bottom: 2px;">${msg.name} • ${timeStr}</small>${msg.text}`;
+            msgContainer.appendChild(div);
+        });
+
+        if (!isInitialAdminLiveLoad && lastMsgUid && lastMsgUid !== adminUser.uid) {
+            chatNotification.play().catch(e => console.log("Sound blocked until user interacts with page."));
+        }
+        isInitialAdminLiveLoad = false;
+        // Ensure the DOM has fully rendered the new messages before scrolling to the bottom
+        setTimeout(() => {
+            msgContainer.scrollTo({ top: msgContainer.scrollHeight, behavior: 'smooth' });
+        }, 50);
+    }, (error) => {
+        console.error("Admin Live Chat Sync Error:", error);
+    });
+
+    // Typing Indicator Logic
+    let typingTimeout;
+    const typingStatusRef = ref(rdb, `typing_status/${adminUser.uid}`);
+    onDisconnect(typingStatusRef).set(null);
+
+    chatInput.addEventListener('input', () => {
+        if (!targetUserId) { // Only broadcast in community chat
+            set(typingStatusRef, { name: "Admin", isTyping: true });
+            clearTimeout(typingTimeout);
+            typingTimeout = setTimeout(() => set(typingStatusRef, { isTyping: false }), 2500);
+        }
+    });
+
+    activeAdminTypingRef = ref(rdb, 'typing_status');
+    onValue(activeAdminTypingRef, (snap) => {
+        if (!typingIndicator || targetUserId) return;
+        const typingUsers = [];
+        snap.forEach((child) => {
+            const val = child.val();
+            if (child.key !== adminUser.uid && val?.isTyping) typingUsers.push(val.name);
+        });
+        typingIndicator.textContent = typingUsers.length > 0 ? `${typingUsers.join(', ')} typing...` : "";
+    });
+
+    chatForm.onsubmit = async (e) => {
+        e.preventDefault();
+        const text = chatInput.value.trim();
+        if (!text) return;
+        try {
+            await push(ref(rdb, chatPath), {
+                uid: adminUser.uid,
+                name: "Admin",
+                text: text,
+                timestamp: rdbTimestamp()
+            });
+            chatInput.value = "";
+            set(typingStatusRef, { isTyping: false });
+        } catch (err) {
+            console.error("Admin send error:", err);
+            alert("Error sending message. Ensure your Admin UID is correctly set in the Database Rules.");
+        }
+    };
+}
 
 // --- 2. Cloudinary Upload ---
 const myWidget = cloudinary.createUploadWidget({
@@ -289,14 +571,33 @@ document.getElementById("upload-widget").addEventListener("click", () => myWidge
 
 // --- 3. Publishing Posts ---
 document.getElementById('submit-post').addEventListener('click', async () => {
-    const submitBtn = document.getElementById('submit-post');
     const title = document.getElementById('post-title').value;
-    const content = quill.root.innerHTML; // Get content from Quill editor
+    const isContentEmpty = quill.getText().trim().length === 0;
 
-    if (!title || !content) {
-        alert("Please fill in the post content.");
+    if (!title || isContentEmpty) {
+        alert("Please provide both a title and some content for your post.");
         return;
     }
+
+    // Show Confirmation Modal instead of immediate submission
+    const confirmModal = document.getElementById('publish-confirm-modal');
+    const confirmTitle = document.getElementById('publish-confirm-title');
+    const confirmMsg = document.getElementById('publish-confirm-msg');
+    const confirmBtn = document.getElementById('confirm-publish-btn');
+
+    confirmTitle.textContent = editingPostId ? "Confirm Update" : "Confirm Publication";
+    confirmMsg.textContent = editingPostId 
+        ? "Are you sure you want to save the changes to this post?" 
+        : "Are you sure you want to publish this post to the blog?";
+    confirmBtn.textContent = editingPostId ? "Update Post" : "Publish Post";
+
+    confirmModal.style.display = 'flex';
+});
+
+async function executePublish() {
+    const submitBtn = document.getElementById('submit-post');
+    const title = document.getElementById('post-title').value;
+    const content = quill.root.innerHTML;
 
     // Set loading state
     submitBtn.disabled = true;
@@ -310,11 +611,8 @@ document.getElementById('submit-post').addEventListener('click', async () => {
                 title,
                 content,
                 image: uploadedImageUrl, // Use the current uploaded image or existing one
-                updatedAt: new Date() // Add an updatedAt timestamp
+                updatedAt: serverTimestamp()
             });
-            alert("Post updated successfully!");
-            editingPostId = null; // Reset editing state
-            submitBtn.innerText = "Publish Post"; // Reset button text
         } else {
             // Add new post
             await addDoc(collection(db, "posts"), {
@@ -323,14 +621,15 @@ document.getElementById('submit-post').addEventListener('click', async () => {
                 image: uploadedImageUrl,
                 createdAt: serverTimestamp() // Use serverTimestamp for consistency
             });
-            alert("Blog published!");
         }
-        clearPostForm(); // Clear the form after action
 
-        // Invalidate cache and refresh
-        adminAllPosts = [];
-        adminAllChats = [];
-        adminGeneralChats = [];
+        // Show Success Modal
+        const successModal = document.getElementById('publish-success-modal');
+        const successMsg = document.getElementById('publish-success-msg');
+        successMsg.textContent = editingPostId ? "Post updated successfully!" : "Blog published!";
+        successModal.style.display = 'flex';
+
+        invalidateAdminCaches();
         loadExistingPosts(true); 
 
         // Automatically switch to "Manage Posts" tab after success
@@ -343,7 +642,7 @@ document.getElementById('submit-post').addEventListener('click', async () => {
         submitBtn.disabled = false;
         submitBtn.innerText = "Publish Post";
     }
-});
+}
 
 // --- 4. Chat Management (Paginated) ---
 
@@ -387,18 +686,42 @@ function displayAdminChats(chats, hasMore = false) {
     const chatsList = document.getElementById('chats-list');
     if (!chatsList) return;
 
-    chatsList.innerHTML = "";
+    chatsList.innerHTML = "<h4>Questions from Community</h4><div class='conversation-stream'></div>";
+    const stream = chatsList.querySelector('.conversation-stream');
+
     chats.forEach((chat) => {
-        const card = document.createElement('div');
-        card.className = `chat-bubble ${chat.status === 'unread' ? 'unread-chat' : ''}`;
-        card.innerHTML = `
-            <p><strong>${chat.userName || "Anonymous"}:</strong> ${chat.message}</p>
-            ${chat.reply ? `<p style="color: var(--primary)"><strong>My Reply:</strong> ${chat.reply}</p>` : `
-                <textarea id="reply-input-${chat.id}" placeholder="Type your reply..."></textarea>
-                <button onclick="window.sendReply('${chat.id}')">Send Reply</button>
-            `}
+        const item = document.createElement('div');
+        item.className = `stream-item ${chat.status === 'unread' ? 'unread-chat' : ''}`;
+        item.innerHTML = `
+            <div class="stream-header">
+                <span class="stream-author">${chat.userName || "Anonymous"}</span>
+                <span class="stream-date">${chat.createdAt?.toDate ? chat.createdAt.toDate().toLocaleDateString() : 'Just now'}</span>
+            </div>
+            <div class="user-msg-slide slide-wrapper">
+                <div class="slide-reply-indicator"><i class="fas fa-reply"></i> REPLY</div>
+                <div class="slide-content">
+                    <p class="stream-text">${chat.message}</p>
+                </div>
+            </div>
+            ${chat.reply ? `
+                <div class="author-reply-slide slide-wrapper">
+                    <div class="slide-reply-indicator"><i class="fas fa-reply"></i> REPLY</div>
+                    <div class="slide-content">
+                        <div class="stream-author-reply">
+                            <span class="reply-badge">My Reply</span>
+                            ${chat.reply}
+                        </div>
+                    </div>
+                </div>
+            ` : ''}
+            <div class="reply-input-area" id="reply-area-${chat.id}" style="${chat.reply ? 'display:none;' : 'display:block;'} margin-top: 10px;">
+                <textarea id="reply-input-${chat.id}" placeholder="Type your reply..." style="margin-bottom: 5px;">${chat.reply || ''}</textarea>
+                <button onclick="window.sendReply('${chat.id}')" style="padding: 0.5rem 1rem; font-size: 0.8rem;">${chat.reply ? 'Update Reply' : 'Send Reply'}</button>
+            </div>
         `;
-        chatsList.appendChild(card);
+        stream.appendChild(item);
+        initSlideToReply(item.querySelector('.user-msg-slide'), chat.id);
+        if (chat.reply) initSlideToReply(item.querySelector('.author-reply-slide'), chat.id);
     });
 
     if (hasMore) {
@@ -408,6 +731,66 @@ function displayAdminChats(chats, hasMore = false) {
         btn.textContent = 'Load More Questions';
         chatsList.appendChild(btn);
     }
+}
+
+/**
+ * Initializes the "Slide to Reply" gesture logic for Admin
+ */
+function initSlideToReply(wrapper, chatId) {
+    const content = wrapper.querySelector('.slide-content');
+    const indicator = wrapper.querySelector('.slide-reply-indicator');
+    let startX = 0, startY = 0, currentX = 0;
+    let isSliding = false;
+    let isScrolling = false;
+    const threshold = 60;
+
+    const handleStart = (e) => {
+        startX = e.type.includes('touch') ? e.touches[0].clientX : e.clientX;
+        startY = e.type.includes('touch') ? e.touches[0].clientY : e.clientY;
+        isSliding = false;
+        isScrolling = false;
+        content.style.transition = 'none';
+    };
+
+    const handleMove = (e) => {
+        const x = e.type.includes('touch') ? e.touches[0].clientX : e.clientX;
+        const y = e.type.includes('touch') ? e.touches[0].clientY : e.clientY;
+        const dx = x - startX;
+        const dy = y - startY;
+
+        if (!isSliding && !isScrolling) {
+            if (Math.abs(dx) > 10 && Math.abs(dx) > Math.abs(dy)) isSliding = true;
+            else if (Math.abs(dy) > 10) isScrolling = true;
+        }
+
+        if (isSliding && dx > 0) {
+            if (e.cancelable) e.preventDefault();
+            currentX = Math.min(dx, 80);
+            content.style.transform = `translateX(${currentX}px)`;
+            indicator.style.opacity = currentX / threshold;
+        }
+    };
+
+    const handleEnd = () => {
+        content.style.transition = 'transform 0.3s cubic-bezier(0.18, 0.89, 0.32, 1.28)';
+        if (isSliding && currentX >= threshold) {
+            const area = document.getElementById(`reply-area-${chatId}`);
+            if (area) {
+                area.style.display = 'block';
+                area.querySelector('textarea')?.focus();
+            }
+        }
+        content.style.transform = 'translateX(0px)';
+        indicator.style.opacity = 0;
+        startX = 0; currentX = 0; isSliding = false;
+    };
+    
+    wrapper.addEventListener('touchstart', handleStart, { passive: true });
+    wrapper.addEventListener('touchmove', handleMove, { passive: false });
+    wrapper.addEventListener('touchend', handleEnd);
+    wrapper.addEventListener('mousedown', handleStart);
+    window.addEventListener('mousemove', (e) => { if(startX > 0) handleMove(e); });
+    window.addEventListener('mouseup', () => { if(startX > 0) { handleEnd(); } });
 }
 
 document.addEventListener('click', (e) => {
@@ -486,9 +869,9 @@ window.sendReply = async (chatId) => {
     try {
         const chatRef = doc(db, "chats", chatId);
         await updateDoc(chatRef, {
-            reply: replyText,
+            reply: replyText, // The response to the user's question
             status: "read",
-            repliedAt: serverTimestamp() // Add a timestamp for when the reply was made
+            repliedAt: serverTimestamp()
         });
         adminAllChats = []; // Invalidate chats cache for statistics
         adminGeneralChats = []; // Invalidate general questions cache
@@ -529,6 +912,11 @@ function displayAdminPosts(posts) {
 
     posts.forEach((post) => {
         const postId = post.id;
+        
+        // Check if content is long enough to warrant a "Read More" toggle
+        const tempDiv = document.createElement("div");
+        tempDiv.innerHTML = post.content || "";
+        const isLong = (tempDiv.textContent || tempDiv.innerText || "").length > POST_PREVIEW_LIMIT;
 
         const postCard = document.createElement('div');
         postCard.className = 'post-card';
@@ -538,9 +926,17 @@ function displayAdminPosts(posts) {
                 <h3>${post.title}</h3>
                 <small>Published: ${post.createdAt?.toDate ? post.createdAt.toDate().toLocaleDateString() : 'N/A'}</small>
                 ${post.updatedAt ? `<small>Updated: ${post.updatedAt.toDate().toLocaleDateString()}</small>` : ''}
-                <div class="post-description collapsed" id="admin-desc-${postId}">${post.content}</div>
-                <span class="read-more-admin-toggle" data-id="${postId}" style="color: var(--primary); cursor: pointer; font-weight: 600; display: block; margin: 0.5rem 0;">Read More</span>
+                <div class="post-description collapsed" id="admin-desc-${postId}">${getSnippet(post.content)}</div>
+                ${isLong ? `<span class="read-more-toggle" data-id="${postId}" data-limit="${POST_PREVIEW_LIMIT}">Read More</span>` : ''}
                 <button class="view-replies-btn" data-id="${postId}" data-title="${post.title}" style="background-color: var(--success); margin-right: 0.5rem;">View Replies (<span class="admin-reply-count-${postId}">${adminCommentCounts[postId] || 0}</span>)</button>
+                <div class="share-container" style="display: inline-block; margin-right: 0.5rem;">
+                    <button class="share-post-btn" data-id="${postId}" style="background-color: var(--primary);">Share</button>
+                    <div class="share-menu" id="admin-share-menu-${postId}">
+                        <a href="#" class="share-item whatsapp" data-id="${postId}" title="Share on WhatsApp"><i class="fab fa-whatsapp"></i></a>
+                        <a href="#" class="share-item twitter" data-id="${postId}" title="Share on Twitter"><i class="fab fa-twitter"></i></a>
+                        <a href="#" class="share-item copy" data-id="${postId}" title="Copy Link"><i class="fas fa-link"></i></a>
+                    </div>
+                </div>
                 <button class="edit-post-btn" data-id="${postId}" style="background-color: var(--primary); margin-right: 0.5rem;">Edit Post</button>
                 <button class="delete-post-btn" data-id="${postId}" style="background-color: #ef4444; margin-top: 1rem;">Delete Post</button>
             </div>
@@ -561,11 +957,72 @@ document.getElementById('admin-search-bar')?.addEventListener('input', (e) => {
 // --- 6. Edit Post Functionality ---
 document.getElementById('existing-posts').addEventListener('click', async (e) => {
     // Handle Read More Toggle in Admin
-    if (e.target.classList.contains('read-more-admin-toggle')) {
-        const postId = e.target.dataset.id;
+    if (e.target.classList.contains('read-more-toggle')) {
+        const toggleBtn = e.target;
+        const postId = toggleBtn.dataset.id;
         const desc = document.getElementById(`admin-desc-${postId}`);
-        const isCollapsed = desc.classList.toggle('collapsed');
-        e.target.textContent = isCollapsed ? 'Read More' : 'Read Less';
+        const post = adminAllPosts.find(p => p.id === postId);
+        if (!post) return;
+
+        const INCREMENT = 300;
+        let currentLimit = parseInt(toggleBtn.dataset.limit) || POST_PREVIEW_LIMIT;
+
+        if (toggleBtn.textContent === 'Read Less') {
+            currentLimit = POST_PREVIEW_LIMIT;
+            desc.innerHTML = getSnippet(post.content, currentLimit);
+            desc.classList.add('collapsed');
+            toggleBtn.textContent = 'Read More';
+        } else {
+            currentLimit += INCREMENT;
+            desc.classList.remove('collapsed');
+            
+            const tempDiv = document.createElement("div");
+            tempDiv.innerHTML = post.content || "";
+            const totalLength = (tempDiv.textContent || tempDiv.innerText || "").length;
+
+            if (currentLimit >= totalLength) {
+                desc.innerHTML = post.content;
+                toggleBtn.textContent = 'Read Less';
+            } else {
+                desc.innerHTML = getSnippet(post.content, currentLimit);
+                toggleBtn.textContent = 'Read More';
+            }
+        }
+        toggleBtn.dataset.limit = currentLimit;
+
+        return;
+    }
+
+    // Handle Share Post
+    if (e.target.classList.contains('share-post-btn')) {
+        const postId = e.target.dataset.id;
+        const menu = document.getElementById(`admin-share-menu-${postId}`);
+        document.querySelectorAll('.share-menu.active').forEach(m => {
+            if (m !== menu) m.classList.remove('active');
+        });
+        if (menu) menu.classList.toggle('active');
+        return;
+    }
+
+    // Handle Share Sub-menu Items
+    const shareItem = e.target.closest('.share-item');
+    if (shareItem && shareItem.closest('#existing-posts')) {
+        e.preventDefault();
+        const postId = shareItem.dataset.id;
+        const shareUrl = `${window.location.origin}/index.html#post-${postId}`;
+        const post = adminAllPosts.find(p => p.id === postId);
+        const text = post ? encodeURIComponent(`Check out this story: ${post.title}`) : "";
+
+        if (shareItem.classList.contains('whatsapp')) {
+            window.open(`https://api.whatsapp.com/send?text=${text}%20${shareUrl}`, '_blank');
+        } else if (shareItem.classList.contains('twitter')) {
+            window.open(`https://twitter.com/intent/tweet?url=${shareUrl}&text=${text}`, '_blank');
+        } else if (shareItem.classList.contains('copy')) {
+            navigator.clipboard.writeText(shareUrl).then(() => {
+                alert("Post link copied to clipboard!");
+            }).catch(err => console.error("Could not copy text: ", err));
+        }
+        shareItem.parentElement.classList.remove('active');
         return;
     }
 
@@ -579,14 +1036,9 @@ document.getElementById('existing-posts').addEventListener('click', async (e) =>
 
     // Handle Delete Post
     if (e.target.classList.contains('delete-post-btn')) {
-        const postIdToDelete = e.target.dataset.id;
-        if (confirm("Are you sure you want to delete this post?")) {
-            await deleteDoc(doc(db, "posts", postIdToDelete));
-            // Invalidate cache and refresh
-            adminAllPosts = [];
-            adminAllChats = [];
-            loadExistingPosts(true); 
-        }
+        postIdToDelete = e.target.dataset.id;
+        const deleteModal = document.getElementById('delete-confirm-modal');
+        if (deleteModal) deleteModal.style.display = 'flex';
         return;
     }
 
@@ -619,6 +1071,8 @@ function clearPostForm() {
     quill.setContents([{ insert: '\n' }]); // Clear Quill editor content, insert newline to prevent empty state issues
     uploadedImageUrl = '';
     document.getElementById('preview-img').style.display = 'none';
-    document.getElementById('submit-post').innerText = 'Publish Post';
+    const submitBtn = document.getElementById('submit-post');
+    submitBtn.innerText = 'Publish Post';
+    submitBtn.disabled = false;
     editingPostId = null;
 }
