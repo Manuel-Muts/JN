@@ -250,7 +250,7 @@ onAuthStateChanged(auth, async (user) => {
 
         // Setup UI for members
         const chatTabBtn = document.getElementById('live-chat-tab-btn');
-        if (chatTabBtn) chatTabBtn.style.display = 'block';
+        if (chatTabBtn) chatTabBtn.style.display = 'flex';
         
         const openDmBtn = document.getElementById('open-dm-btn');
         if (openDmBtn) openDmBtn.style.display = 'flex';
@@ -618,8 +618,9 @@ function renderPosts(posts) {
                     <button class="like-btn ${hasLiked ? 'liked' : ''}" data-post-id="${post.id}" ${hasLiked ? 'disabled' : ''}>
                         ❤️ <span class="like-count like-count-${post.id}">${likeCounts[post.id] !== undefined ? likeCounts[post.id] : (post.likes || 0)}</span>
                     </button>
-                    <button class="open-reply-modal-btn" data-post-id="${post.id}" data-post-title="${post.title}">Reply</button>
-                    <button class="toggle-replies-btn" data-post-id="${post.id}">View Replies (<span class="reply-count-${post.id}">${commentCounts[post.id] || 0}</span>)</button>
+                    
+                    <button class="open-reply-modal-btn" data-post-id="${post.id}" data-post-title="${post.title}"><i class="fas fa-comment-sms"></i> Reply</button>
+                    <button class="toggle-replies-btn" data-post-id="${post.id}"><i class="fas fa-comments"></i> View Replies (<span class="reply-count-${post.id}">${commentCounts[post.id] || 0}</span>)</button>
                     <div class="share-container">
                         <button class="share-btn" data-post-id="${post.id}"><i class="fas fa-share-alt"></i> Share</button>
                         <div class="share-menu" id="share-menu-${post.id}">

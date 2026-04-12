@@ -2,19 +2,21 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>LET'S TALK</title>
     <link rel="stylesheet" href="css/style.css">
     <link rel="stylesheet" href="css/header.css">
     <link rel="stylesheet" href="css/legal.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
 </head>
 <body>
     <nav>
         <div class="logo"><strong>LET'S</strong> TALK</div>
          
         <div class="links">
-            <a href="admin.html" class="admin-link">Admin</a>
+            <a href="admin.html" class="admin-link" style="font-size: 1.5rem;">Admin</a>
             <div id="auth-nav" style="display: flex; align-items: center;">
-                <button id="user-auth-modal-btn" class="login-pill">Sign In</button>
+                <button id="user-auth-modal-btn" class="login-pill" style="font-size: 1rem;">Sign In</button>
                 <div id="user-profile-nav" style="display: none; align-items: center; gap: 10px;">
                     <span id="user-display-name" style="font-weight: 600;"></span>
                     <button id="user-logout-btn" class="secondary-btn" style="width: auto; margin: 0; padding: 0.4rem 1rem;">Logout</button>
@@ -78,9 +80,9 @@
 
         <!-- Client Tab Navigation -->
         <div class="admin-tabs client-tabs" style="margin-bottom: 2rem;">
-            <button class="tab-btn active" data-tab="stories-tab">Stories</button>
-            <button class="tab-btn" data-tab="community-tab">Community Connection</button>
-            <button id="live-chat-tab-btn" class="tab-btn" data-tab="live-chat-section" style="display: none;">Live Chat</button>
+            <button class="tab-btn active" data-tab="stories-tab"><i class="fas fa-book-open"></i> Stories</button>
+            <button class="tab-btn" data-tab="community-tab"><i class="fas fa-users"></i> Community Connection</button>
+            <button id="live-chat-tab-btn" class="tab-btn" data-tab="live-chat-section" style="display: none;"><i class="fas fa-comments"></i> Live Chat</button>
         </div>
 
         <!-- Tab content: Blog Stories -->

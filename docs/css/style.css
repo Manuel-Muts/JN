@@ -157,6 +157,37 @@ input:focus, textarea:focus, select:focus {
     box-shadow: 0 0 0 3px rgba(79, 70, 229, 0.1);
 }
 
+@media (max-width: 768px) {
+    body {
+        font-size: 16px; /* Larger base font for mobile readability */
+    }
+    nav {
+        flex-direction: column;
+        padding: 1rem;
+        gap: 0.8rem;
+    }
+    .links {
+        gap: 0.8rem;
+        flex-wrap: wrap;
+        justify-content: center;
+    }
+    .admin-tabs {
+        position: static; /* Prevent tabs from getting stuck under the mobile nav */
+        overflow-x: auto;
+        padding: 0 5px;
+    }
+    .tab-btn {
+        font-size: 1rem;
+        padding: 1rem 1.2rem; /* Larger touch targets */
+    }
+    .glow-title {
+        font-size: 2rem !important;
+    }
+    .container {
+        margin-top: 1rem;
+    }
+}
+
 button {
     background: var(--primary);
     color: white;
