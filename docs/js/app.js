@@ -403,7 +403,7 @@ function setupLiveChat() {
             const div = document.createElement('div');
             const isMe = msg.uid === currentUser.uid;
             div.className = `live-msg ${isMe ? 'me' : 'other'}`;
-            div.innerHTML = `<small style="display:block; opacity: 0.8; font-size: 0.7rem;">${msg.name} • ${timeStr}</small>${msg.text}`;
+            div.innerHTML = `<small>${msg.name} • ${timeStr}</small>${msg.text}`;
             msgContainer.appendChild(div);
         });
 
@@ -452,11 +452,19 @@ function setupLiveChat() {
         if (!text) return;
 
         try {
+            // 1. Push the message to the conversation thread
             await push(ref(rdb, chatPath), {
                 uid: currentUser.uid,
                 name: `${currentUserData.firstName || ''} ${currentUserData.lastName || ''}`.trim() || currentUser.email.split('@')[0],
                 text: text,
-                timestamp: rdbTimestamp()
+                timestamp: Date.now()
+            });
+
+            // 2. Update the admin's chat list summary
+            await set(ref(rdb, `chat_list/${currentUser.uid}`), {
+                name: `${currentUserData.firstName || ''} ${currentUserData.lastName || ''}`.trim() || currentUser.email,
+                lastMessage: text,
+                timestamp: Date.now()
             });
             chatInput.value = "";
             set(typingStatusRef, { isTyping: false });
@@ -903,7 +911,7 @@ document.getElementById('community-chat-form')?.addEventListener('submit', async
             message: message,
             userId: currentUser ? currentUser.uid : "guest",
             postId: null, // General chat identifier
-            createdAt: serverTimestamp(),
+            createdAt: Date.now(),
             status: "unread"
         });
 
@@ -1212,8 +1220,8 @@ replyForm?.addEventListener('submit', async (e) => {
             userId: currentUser.uid,
             postId: currentPostIdForReply,
             postTitle: currentPostTitleForReply,
-            createdAt: serverTimestamp(),
-            status: "pending_reply" // New status for replies awaiting author response
+            createdAt: Date.now(), 
+            status: "unread" // Consistent status for admin filtering
         });
         alert("Your reply has been sent!");
         replyModal.style.display = 'none';

@@ -104,10 +104,15 @@
 
             <!-- Tab 5: Live Community Chat -->
             <div id="live-chat-tab" class="tab-content">
-                <div class="interaction-box" style="position: sticky; top: 125px; z-index: 85; margin-bottom: 1.5rem; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.1); border-bottom: 2px solid var(--primary);">
+                <div class="interaction-box" style="position: sticky; top: 125px; z-index: 85; margin-bottom: 1.5rem; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.1); border-bottom: 2px solid var(--primary); display: flex; flex-direction: column; gap: 1rem;">
                     <h3 style="margin: 0 0 0.8rem 0; font-size: 1.1rem;">Online Now (<span id="admin-online-count">0</span>)</h3>
                     <div id="admin-online-users-list" style="display: flex; flex-wrap: wrap; gap: 10px; max-height: 120px; overflow-y: auto; padding-bottom: 5px;">
                         <!-- Online users will be dynamically listed here -->
+                    </div>
+                    <hr style="border: 0; border-top: 1px solid #e2e8f0; margin: 0;">
+                    <h3 style="margin: 0; font-size: 1.1rem;">Recent Conversations</h3>
+                    <div id="admin-recent-threads-list" style="display: flex; flex-direction: column; gap: 5px; max-height: 250px; overflow-y: auto;">
+                        <!-- Chat threads will be dynamically listed here -->
                     </div>
                 </div>
 
@@ -123,8 +128,6 @@
                         <button type="submit">Send</button>
                     </form>
                 </div>
-            </div>
-
             </div>
         </section>
     </div>

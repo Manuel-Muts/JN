@@ -61,6 +61,8 @@ let adminTopLikedCache = null; // Cache for top 5 posts list
 let adminCommentCountListeners = {}; // Stores unsubscribe functions
 let adminPresenceRef = null;
 let isInitialAdminLiveLoad = true;
+let adminThreadsRef = null;
+let chatThreadsListenerInitialized = false;
 const chatNotification = new Audio('https://assets.mixkit.co/active_storage/sfx/2358/2358-preview.mp3');
 let activeAdminLiveChatRef = null;
 let activeAdminTypingRef = null;
@@ -332,15 +334,15 @@ onAuthStateChanged(auth, async (user) => {
             if (userDoc.exists() && userData.role === 'admin') {
                 loginSec.style.display = "none";
                 adminPanel.style.display = "block";
+                
+                // Initialize Firestore Data
                 setupInteractionsSummary();
                 loadAdminChats(false);
                 loadExistingPosts();
-                setupTabs(); // Initialize tabs after panel is visible
-                setupAdminLiveChat(user);
-                if (!presenceInitialized) {
-                    setupAdminPresence(user, `${userData.firstName || ''} ${userData.lastName || ''}`.trim() || "Admin");
-                    presenceInitialized = true;
-                }
+                setupTabs();
+
+                // Initialize Realtime Database Listeners for Live Chat
+                initAdminLiveSystems(user, userData);
             } else {
                 loginSec.style.display = "block";
                 adminPanel.style.display = "none";
@@ -372,16 +374,37 @@ onAuthStateChanged(auth, async (user) => {
         if (activeAdminLiveChatRef) off(activeAdminLiveChatRef);
         if (activeAdminTypingRef) off(activeAdminTypingRef);
         if (adminPresenceRef) off(adminPresenceRef);
+        if (adminThreadsRef) off(adminThreadsRef);
+        chatThreadsListenerInitialized = false;
         presenceInitialized = false;
         activeAdminLiveChatRef = null;
         activeAdminTypingRef = null;
         adminPresenceRef = null;
         activeTargetUserId = null;
-        
+
         document.getElementById('email').value = '';
         document.getElementById('password').value = '';
     }
 });
+
+/**
+ * Grouped initialization for Realtime Database features
+ */
+function initAdminLiveSystems(user, userData) {
+    const adminName = `${userData.firstName || ''} ${userData.lastName || ''}`.trim() || "Admin";
+    
+    if (!chatThreadsListenerInitialized) {
+        setupChatThreadsListener(user);
+        chatThreadsListenerInitialized = true;
+    }
+    
+    if (!presenceInitialized) {
+        setupAdminPresence(user, adminName);
+        presenceInitialized = true;
+    }
+
+    setupAdminLiveChat(user); // Show "Select a Conversation" placeholder
+}
 
 /**
  * Tracks admin presence and listens for online users
@@ -444,6 +467,74 @@ function setupAdminPresence(adminUser, adminName) {
 }
 
 /**
+ * Listens to all private chat threads to group them separately for the admin
+ */
+function setupChatThreadsListener(adminUser) {
+    if (adminThreadsRef) off(adminThreadsRef);
+
+    const threadsList = document.getElementById('admin-recent-threads-list');
+    if (!threadsList) return;
+
+    adminThreadsRef = ref(rdb, 'private_chats');
+    onValue(adminThreadsRef, (snap) => {
+        threadsList.innerHTML = "";
+        if (!snap.exists() || !snap.hasChildren()) {
+            threadsList.innerHTML = "<p style='text-align:center; padding: 1rem; color: var(--gray); font-size: 0.8rem;'>No message history.</p>";
+            return;
+        }
+
+        const threads = [];
+        snap.forEach((child) => {
+            const messages = child.val();
+            if (!messages) return;
+
+            // Realtime DB push IDs are random, so we sort values by timestamp manually
+            const msgArray = Object.values(messages).sort((a, b) => {
+                const timeA = (a.timestamp && typeof a.timestamp === 'number') ? a.timestamp : 0;
+                const timeB = (b.timestamp && typeof b.timestamp === 'number') ? b.timestamp : 0;
+                return timeA - timeB;
+            });
+
+            const lastMsg = msgArray[msgArray.length - 1];
+            if (!lastMsg) return;
+            
+            // Identify the client's name by looking for the most recent message NOT sent by Admin
+            const clientMsg = [...msgArray].reverse().find(m => m.uid !== adminUser.uid);
+
+            threads.push({
+                uid: child.key,
+                name: clientMsg?.name || lastMsg.name || "Logged-in Client",
+                lastText: lastMsg.text,
+                timestamp: (typeof lastMsg.timestamp === 'number') ? lastMsg.timestamp : 0
+            });
+        });
+
+        // Sort threads by the most recent interaction
+        threads.sort((a, b) => b.timestamp - a.timestamp);
+
+        threads.forEach(thread => {
+            const div = document.createElement('div');
+            div.className = "thread-item";
+            div.style.cssText = `
+                padding: 0.8rem;
+                border-radius: 8px;
+                background: #f8fafc;
+                border: 1px solid #e2e8f0;
+                cursor: pointer;
+                margin-bottom: 8px;
+                transition: background 0.2s;
+            `;
+            div.innerHTML = `
+                <div style="display: flex; justify-content: space-between; font-weight: 600; font-size: 0.85rem;"><span>${thread.name}</span></div>
+                <div style="font-size: 0.75rem; color: var(--gray); white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">${thread.lastText}</div>
+            `;
+            div.onclick = () => setupAdminLiveChat(adminUser, thread.uid, thread.name);
+            threadsList.appendChild(div);
+        });
+    });
+}
+
+/**
  * Shared Live Chat Logic for Admin
  * (Note: You'll need to add the same HTML structure to admin.html for this to render)
  */
@@ -453,6 +544,8 @@ function setupAdminLiveChat(adminUser, targetUserId = null, targetUserName = nul
     const chatInput = document.getElementById('admin-live-chat-input');
     const typingIndicator = document.getElementById('admin-typing-indicator');
     const headerTitle = document.getElementById('admin-chat-header-title');
+
+    if (!msgContainer || !chatForm) return;
 
     activeTargetUserId = targetUserId;
 
@@ -468,8 +561,6 @@ function setupAdminLiveChat(adminUser, targetUserId = null, targetUserName = nul
         chatForm.style.display = "none";
         return;
     }
-
-    if (!msgContainer || !chatForm) return;
 
     const chatPath = `private_chats/${targetUserId}`;
 
@@ -490,12 +581,7 @@ function setupAdminLiveChat(adminUser, targetUserId = null, targetUserName = nul
             const div = document.createElement('div');
             const isMe = msg.uid === adminUser.uid;
             div.className = `live-msg ${isMe ? 'me' : 'other'}`;
-            div.style.padding = "10px";
-            div.style.marginBottom = "5px";
-            div.style.borderRadius = "8px";
-            div.style.background = isMe ? "var(--primary)" : "#eee";
-            div.style.color = isMe ? "white" : "black";
-            div.innerHTML = `<small style="display:block; opacity: 0.8; font-size: 0.7rem; margin-bottom: 2px;">${msg.name} • ${timeStr}</small>${msg.text}`;
+            div.innerHTML = `<small>${msg.name} • ${timeStr}</small>${msg.text}`;
             msgContainer.appendChild(div);
         });
 
@@ -516,21 +602,19 @@ function setupAdminLiveChat(adminUser, targetUserId = null, targetUserName = nul
     const typingStatusRef = ref(rdb, `typing_status/${adminUser.uid}`);
     onDisconnect(typingStatusRef).set(null);
 
-    chatInput.addEventListener('input', () => {
-        if (!targetUserId) { // Only broadcast in community chat
-            set(typingStatusRef, { name: "Admin", isTyping: true });
-            clearTimeout(typingTimeout);
-            typingTimeout = setTimeout(() => set(typingStatusRef, { isTyping: false }), 2500);
-        }
-    });
+    chatInput.oninput = () => {
+        set(typingStatusRef, { name: "Admin", isTyping: true });
+        clearTimeout(typingTimeout);
+        typingTimeout = setTimeout(() => set(typingStatusRef, { isTyping: false }), 2500);
+    };
 
     activeAdminTypingRef = ref(rdb, 'typing_status');
     onValue(activeAdminTypingRef, (snap) => {
-        if (!typingIndicator || targetUserId) return;
+        if (!typingIndicator) return;
         const typingUsers = [];
         snap.forEach((child) => {
             const val = child.val();
-            if (child.key !== adminUser.uid && val?.isTyping) typingUsers.push(val.name);
+            if (child.key !== adminUser.uid && val?.isTyping && (!targetUserId || child.key === targetUserId)) typingUsers.push(val.name);
         });
         typingIndicator.textContent = typingUsers.length > 0 ? `${typingUsers.join(', ')} typing...` : "";
     });
@@ -544,7 +628,7 @@ function setupAdminLiveChat(adminUser, targetUserId = null, targetUserName = nul
                 uid: adminUser.uid,
                 name: "Admin",
                 text: text,
-                timestamp: rdbTimestamp()
+                timestamp: Date.now()
             });
             chatInput.value = "";
             set(typingStatusRef, { isTyping: false });
@@ -651,9 +735,10 @@ function setupInteractionsSummary() {
     const summary = document.getElementById('interactions-summary');
     if (!summary) return;
 
-    const q = query(collection(db, "chats"), where("postId", "==", null), where("status", "==", "unread"));
+    // Listen for any unread interaction (general or post-specific)
+    const q = query(collection(db, "chats"), where("status", "in", ["unread", "pending_reply"]));
     onSnapshot(q, (snapshot) => {
-        summary.innerHTML = `<h3>You have ${snapshot.size} unread questions.</h3>`;
+        summary.innerHTML = `<h3>You have ${snapshot.size} unread interactions.</h3>`;
     });
 }
 
@@ -665,7 +750,6 @@ function loadAdminChats() {
 
     const q = query(
         collection(db, "chats"), 
-        where("postId", "==", null),
         orderBy("createdAt", "desc"),
         limit(50)
     );
@@ -678,7 +762,7 @@ function loadAdminChats() {
         }
     }, (err) => {
         console.error("Error listening to admin chats:", err);
-        chatsList.innerHTML = "<p style='text-align:center; color: var(--danger);'>Failed to load live chats.</p>";
+        chatsList.innerHTML = "<p style='text-align:center; color: var(--danger);'>Failed to load community questions.</p>";
     });
 }
 
@@ -694,7 +778,10 @@ function displayAdminChats(chats, hasMore = false) {
         item.className = `stream-item ${chat.status === 'unread' ? 'unread-chat' : ''}`;
         item.innerHTML = `
             <div class="stream-header">
-                <span class="stream-author">${chat.userName || "Anonymous"}</span>
+                <div style="display: flex; flex-direction: column;">
+                    <span class="stream-author">${chat.userName || "Anonymous"}</span>
+                    ${chat.postTitle ? `<small style="color: var(--primary); font-weight: 600;">Re: ${chat.postTitle}</small>` : '<small style="color: var(--gray);">General Inquiry</small>'}
+                </div>
                 <span class="stream-date">${chat.createdAt?.toDate ? chat.createdAt.toDate().toLocaleDateString() : 'Just now'}</span>
             </div>
             <div class="user-msg-slide slide-wrapper">
