@@ -475,7 +475,7 @@ function setupChatThreadsListener(adminUser) {
     const threadsList = document.getElementById('admin-recent-threads-list');
     if (!threadsList) return;
 
-    adminThreadsRef = ref(rdb, 'private_chats');
+    adminThreadsRef = ref(rdb, 'chat_list');
     onValue(adminThreadsRef, (snap) => {
         threadsList.innerHTML = "";
         if (!snap.exists() || !snap.hasChildren()) {
@@ -485,40 +485,23 @@ function setupChatThreadsListener(adminUser) {
 
         const threads = [];
         snap.forEach((child) => {
-            const messages = child.val();
-            if (!messages) return;
-
-            // Realtime DB push IDs are random, so we sort values by timestamp manually
-            const msgArray = Object.values(messages).sort((a, b) => {
-                const timeA = (a.timestamp && typeof a.timestamp === 'number') ? a.timestamp : 0;
-                const timeB = (b.timestamp && typeof b.timestamp === 'number') ? b.timestamp : 0;
-                return timeA - timeB;
-            });
-
-            const lastMsg = msgArray[msgArray.length - 1];
-            if (!lastMsg) return;
-            
-            // Identify the client's name by looking for the most recent message NOT sent by Admin
-            const clientMsg = [...msgArray].reverse().find(m => m.uid !== adminUser.uid);
-
+            const data = child.val();
             threads.push({
                 uid: child.key,
-                name: clientMsg?.name || lastMsg.name || "Logged-in Client",
-                lastText: lastMsg.text,
-                timestamp: (typeof lastMsg.timestamp === 'number') ? lastMsg.timestamp : 0
+                name: data.name || "Logged-in Client",
+                lastText: data.lastMessage || "",
+                timestamp: data.timestamp || 0
             });
         });
 
         // Sort threads by the most recent interaction
         threads.sort((a, b) => b.timestamp - a.timestamp);
-        if (threads.length > 0 && !activeTargetUserId) {
-    const first = threads[0];
-    setupAdminLiveChat(adminUser, first.uid, first.name);
-    }
-       if (!activeTargetUserId && threads.length > 0) {
-    const first = threads[0];
-    setupAdminLiveChat(adminUser, first.uid, first.name);
-      }
+
+        if (!activeTargetUserId && threads.length > 0) {
+            const first = threads[0];
+            setupAdminLiveChat(adminUser, first.uid, first.name);
+        }
+
         threads.forEach(thread => {
             const div = document.createElement('div');
             div.className = "thread-item";
