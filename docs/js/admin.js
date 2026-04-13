@@ -1,13 +1,11 @@
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js";
 import { getAuth, signInWithEmailAndPassword, onAuthStateChanged, signOut } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-auth.js";
 import { getFirestore, collection, addDoc, query, orderBy, getDocs, updateDoc, doc, onSnapshot, deleteDoc, getDoc, serverTimestamp, where, getCountFromServer, limit, startAfter, limitToLast as firestoreLimitToLast, setDoc } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
-import { getDatabase, ref, onValue, set, onDisconnect, push, serverTimestamp as rdbTimestamp, limitToLast, query as rdbQuery, off } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-database.js";
 import { SharedComponents } from "./components.js";
 
 const firebaseConfig = {
   apiKey: "AIzaSyBIGqZLYcDg3CR5VamDwBhtOOfl2Y0NYeI",
   authDomain: "timotech-films.firebaseapp.com",
-  databaseURL: "https://timotech-films-default-rtdb.firebaseio.com",
   projectId: "timotech-films",
   storageBucket: "timotech-films.firebasestorage.app",
   messagingSenderId: "563809562931",
@@ -16,7 +14,6 @@ const firebaseConfig = {
 const app = initializeApp(firebaseConfig);
 const auth = getAuth(app);
 const db = getFirestore(app);
-const rdb = getDatabase(app);
 
 // Helper for character limit truncation
 const POST_PREVIEW_LIMIT = 150;
@@ -59,17 +56,14 @@ let adminCommentCounts = {}; // Stores counts locally: { postId: count }
 let adminStatsCache = null; // Cache for calculated summary stats
 let adminTopLikedCache = null; // Cache for top 5 posts list
 let adminCommentCountListeners = {}; // Stores unsubscribe functions
-let adminPresenceRef = null;
 let isInitialAdminLiveLoad = true;
-let adminThreadsRef = null;
 let chatThreadsListenerInitialized = false;
 const chatNotification = new Audio('https://assets.mixkit.co/active_storage/sfx/2358/2358-preview.mp3');
 let activeAdminLiveChatRef = null;
-let activeAdminTypingRef = null;
+let adminReplyingTo = null;
 let tabsInitialized = false;
 const ADMIN_CHATS_PER_PAGE = 10;
 let activeTargetUserId = null;
-let presenceInitialized = false;
 let adminChatPagination = { lastDoc: null, hasMore: true };
 
 // --- Tab Navigation Logic ---
@@ -341,8 +335,12 @@ onAuthStateChanged(auth, async (user) => {
                 loadExistingPosts();
                 setupTabs();
 
-                // Initialize Realtime Database Listeners for Live Chat
-                initAdminLiveSystems(user, userData);
+                // Setup Firestore Live Chat
+                if (!chatThreadsListenerInitialized) {
+                    setupChatThreadsListener(user);
+                    chatThreadsListenerInitialized = true;
+                }
+                setupAdminLiveChat(user); 
             } else {
                 loginSec.style.display = "block";
                 adminPanel.style.display = "none";
@@ -370,101 +368,19 @@ onAuthStateChanged(auth, async (user) => {
         if (globalChatsListener) globalChatsListener();
         globalChatsListener = null;
 
-        // Cleanup Realtime Database listeners
-        if (activeAdminLiveChatRef) off(activeAdminLiveChatRef);
-        if (activeAdminTypingRef) off(activeAdminTypingRef);
-        if (adminPresenceRef) off(adminPresenceRef);
-        if (adminThreadsRef) off(adminThreadsRef);
+        // Cleanup Firestore listener
+        if (activeAdminLiveChatRef) {
+            activeAdminLiveChatRef();
+            activeAdminLiveChatRef = null;
+        }
+
         chatThreadsListenerInitialized = false;
-        presenceInitialized = false;
-        activeAdminLiveChatRef = null;
-        activeAdminTypingRef = null;
-        adminPresenceRef = null;
         activeTargetUserId = null;
 
         document.getElementById('email').value = '';
         document.getElementById('password').value = '';
     }
 });
-
-/**
- * Grouped initialization for Realtime Database features
- */
-function initAdminLiveSystems(user, userData) {
-    const adminName = `${userData.firstName || ''} ${userData.lastName || ''}`.trim() || "Admin";
-    
-    if (!chatThreadsListenerInitialized) {
-        setupChatThreadsListener(user);
-        chatThreadsListenerInitialized = true;
-    }
-    
-    if (!presenceInitialized) {
-        setupAdminPresence(user, adminName);
-        presenceInitialized = true;
-    }
-
-    setupAdminLiveChat(user); // Show "Select a Conversation" placeholder
-}
-
-/**
- * Tracks admin presence and listens for online users
- */
-function setupAdminPresence(adminUser, adminName) {
-    const statusRef = ref(rdb, `status/${adminUser.uid}`);
-    const connectedRef = ref(rdb, '.info/connected');
-    const presenceList = document.getElementById('admin-online-users-list');
-    const onlineCountDisplay = document.getElementById('admin-online-count');
-
-    // 1. Mark Admin as online so users can see them
-    onValue(connectedRef, (snap) => {
-        if (snap.val() === true) {
-            onDisconnect(statusRef).set({
-                online: false,
-                lastChanged: rdbTimestamp()
-            });
-            set(statusRef, {
-                online: true,
-                name: adminName,
-                lastChanged: rdbTimestamp()
-            });
-        }
-    });
-
-    // 2. Listen for all online users (to display to admin)
-    adminPresenceRef = ref(rdb, 'status');
-    onValue(adminPresenceRef, (snap) => {
-        if (!presenceList) return;
-        
-        presenceList.innerHTML = "";
-        let count = 0;
-        
-        snap.forEach((child) => {
-            const val = child.val();
-            if (val.online) {
-                count++;
-                const item = document.createElement('div');
-                item.className = "online-user-item"; 
-                item.style.padding = "0.4rem 0.8rem";
-                item.style.border = "1px solid #e2e8f0";
-                item.style.borderRadius = "20px";
-                item.style.background = "#f8fafc";
-                item.style.display = "flex";
-                item.style.alignItems = "center";
-                item.style.gap = "10px";
-                item.innerHTML = `
-                    <span style="white-space: nowrap; font-size: 0.85rem;"><i class="fas fa-circle" style="color: var(--success); font-size: 0.6rem; margin-right: 5px;"></i> ${val.name || 'Anonymous'}</span>
-                    ${child.key !== adminUser.uid ? `<button class="private-chat-btn" data-uid="${child.key}" data-name="${val.name || 'User'}" style="padding: 0.2rem 0.5rem; font-size: 0.7rem; margin: 0;">Chat</button>` : ''}
-                `;
-                presenceList.appendChild(item);
-
-                const chatBtn = item.querySelector('.private-chat-btn');
-                if (chatBtn) chatBtn.onclick = () => setupAdminLiveChat(adminUser, child.key, val.name || "User");
-            }
-        });
-
-        if (onlineCountDisplay) onlineCountDisplay.textContent = count;
-    });
-}
 
 /**
  * Listens to all private chat threads to group them separately for the admin
@@ -486,22 +402,8 @@ function setupChatThreadsListener(adminUser) {
             const thread = { uid: docSnap.id, ...docSnap.data() };
             const div = document.createElement('div');
             const isUnread = thread.unreadByAdmin === true;
-            div.className = `thread-item ${isUnread ? 'unread-thread' : ''}`;
+            div.className = `thread-item ${isUnread ? 'unread-thread' : ''} ${thread.uid === activeTargetUserId ? 'active' : ''}`;
 
-             if (thread.uid === activeTargetUserId) {
-        div.style.background = "#dbeafe";
-        div.style.borderColor = "var(--primary)";
-        div.style.borderLeft = "4px solid var(--primary)";
-    }
-            div.style.cssText = `
-                padding: 0.8rem;
-                border-radius: 8px;
-                background: #f8fafc;
-                border: 1px solid #e2e8f0;
-                cursor: pointer;
-                margin-bottom: 8px;
-                transition: background 0.2s;
-            `;
             div.innerHTML = `
                 <div style="display: flex; justify-content: space-between; font-weight: 600; font-size: 0.85rem;">
                     <span>${thread.name}</span>
@@ -531,11 +433,25 @@ function setupAdminLiveChat(adminUser, targetUserId = null, targetUserName = nul
     const msgContainer = document.getElementById('admin-live-messages');
     const chatForm = document.getElementById('admin-live-chat-form');
     const chatInput = document.getElementById('admin-live-chat-input');
-    const typingIndicator = document.getElementById('admin-typing-indicator');
     const headerTitle = document.getElementById('admin-chat-header-title');
 
     if (!msgContainer || !chatForm) return;
 
+    // Inject reply preview bar if not exists
+    if (!document.getElementById('admin-reply-preview-bar')) {
+        const bar = document.createElement('div');
+        bar.id = 'admin-reply-preview-bar';
+        bar.className = 'reply-preview-bar';
+        bar.innerHTML = `<span id="admin-reply-preview-text"></span><i class="fas fa-times" id="cancel-admin-reply"></i>`;
+        chatForm.parentNode.insertBefore(bar, chatForm);
+        document.getElementById('cancel-admin-reply').addEventListener('click', () => {
+            adminReplyingTo = null;
+            bar.style.display = 'none';
+        });
+    }
+
+    adminReplyingTo = null;
+    document.getElementById('admin-reply-preview-bar').style.display = 'none';
     activeTargetUserId = targetUserId;
 
    if (!targetUserId) {
@@ -549,9 +465,14 @@ function setupAdminLiveChat(adminUser, targetUserId = null, targetUserName = nul
     return;
      }
 
+    headerTitle.textContent = `Chatting with ${targetUserName}`;
+    chatForm.style.display = "flex";
+
     // Clean up existing listeners before starting a new one
-    if (activeAdminLiveChatRef) activeAdminLiveChatRef();
-    if (activeAdminTypingRef) off(activeAdminTypingRef);
+    if (activeAdminLiveChatRef) {
+        activeAdminLiveChatRef();
+        activeAdminLiveChatRef = null;
+    }
     isInitialAdminLiveLoad = true;
 
     const q = query(collection(db, "direct_messages", targetUserId, "messages"), orderBy("timestamp", "asc"), firestoreLimitToLast(50));
@@ -563,11 +484,20 @@ function setupAdminLiveChat(adminUser, targetUserId = null, targetUserName = nul
             lastMsgUid = msg.uid;
             const timeStr = msg.timestamp?.toDate ? msg.timestamp.toDate().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '';
             
-            const div = document.createElement('div');
+            const wrapper = document.createElement('div');
             const isMe = msg.uid === adminUser.uid;
-            div.className = `live-msg ${isMe ? 'me' : 'other'}`;
-            div.innerHTML = `<small>${msg.name} • ${timeStr}</small>${msg.text}`;
-            msgContainer.appendChild(div);
+            wrapper.className = `slide-wrapper ${isMe ? 'me' : 'other'}`;
+            wrapper.innerHTML = `
+                <div class="slide-reply-indicator"><i class="fas fa-reply"></i> REPLY</div>
+                <div class="slide-content">
+                    <div class="live-msg">
+                        ${msg.replyTo ? `<div class="reply-preview-in-msg"><strong>${msg.replyTo.name}</strong>: ${msg.replyTo.text}</div>` : ''}
+                        <small>${msg.name} • ${timeStr}</small>${msg.text}
+                    </div>
+                </div>
+            `;
+            msgContainer.appendChild(wrapper);
+            initAdminLiveChatReply(wrapper, msg.name, msg.text);
         });
 
         if (!isInitialAdminLiveLoad && lastMsgUid && lastMsgUid !== adminUser.uid) {
@@ -582,28 +512,6 @@ function setupAdminLiveChat(adminUser, targetUserId = null, targetUserName = nul
         console.error("Admin Live Chat Sync Error:", error);
     });
 
-    // Typing Indicator Logic
-    let typingTimeout;
-    const typingStatusRef = ref(rdb, `typing_status/${adminUser.uid}`);
-    onDisconnect(typingStatusRef).set(null);
-
-    chatInput.oninput = () => {
-        set(typingStatusRef, { name: "Admin", isTyping: true });
-        clearTimeout(typingTimeout);
-        typingTimeout = setTimeout(() => set(typingStatusRef, { isTyping: false }), 2500);
-    };
-
-    activeAdminTypingRef = ref(rdb, 'typing_status');
-    onValue(activeAdminTypingRef, (snap) => {
-        if (!typingIndicator) return;
-        const typingUsers = [];
-        snap.forEach((child) => {
-            const val = child.val();
-            if (child.key !== adminUser.uid && val?.isTyping && (!targetUserId || child.key === targetUserId)) typingUsers.push(val.name);
-        });
-        typingIndicator.textContent = typingUsers.length > 0 ? `${typingUsers.join(', ')} typing...` : "";
-    });
-
     chatForm.onsubmit = async (e) => {
         e.preventDefault();
         const text = chatInput.value.trim();
@@ -613,7 +521,8 @@ function setupAdminLiveChat(adminUser, targetUserId = null, targetUserName = nul
                 uid: adminUser.uid,
                 name: "Admin",
                 text: text,
-                timestamp: serverTimestamp()
+                timestamp: serverTimestamp(),
+                replyTo: adminReplyingTo
             };
 
             // 1. Save to the user's specific thread in Firestore
@@ -623,16 +532,71 @@ function setupAdminLiveChat(adminUser, targetUserId = null, targetUserName = nul
             await setDoc(doc(db, "chat_summaries", targetUserId), {
                 lastMessage: text,
                 timestamp: serverTimestamp(),
-                unreadByAdmin: false
+                unreadByAdmin: false,
+                unreadByUser: true
             }, { merge: true });
 
+            adminReplyingTo = null;
+            document.getElementById('admin-reply-preview-bar').style.display = 'none';
             chatInput.value = "";
-            set(typingStatusRef, { isTyping: false });
         } catch (err) {
             console.error("Admin send error:", err);
             alert("Error sending message. Ensure your Admin UID is correctly set in the Database Rules.");
         }
     };
+}
+
+/**
+ * Initializes the "Slide to Reply" gesture logic for Admin Live Chat
+ */
+function initAdminLiveChatReply(wrapper, name, text) {
+    const content = wrapper.querySelector('.slide-content');
+    const indicator = wrapper.querySelector('.slide-reply-indicator');
+    let startX = 0, currentX = 0, isSliding = false;
+    const threshold = 60;
+
+    const handleStart = (e) => {
+        startX = e.type.includes('touch') ? e.touches[0].clientX : e.clientX;
+        isSliding = false;
+        content.style.transition = 'none';
+    };
+
+    const handleMove = (e) => {
+        const x = e.type.includes('touch') ? e.touches[0].clientX : e.clientX;
+        const dx = x - startX;
+        if (Math.abs(dx) > 10) isSliding = true;
+
+        if (isSliding && dx > 0) {
+            if (e.cancelable) e.preventDefault();
+            currentX = Math.min(dx, 80);
+            content.style.transform = `translateX(${currentX}px)`;
+            indicator.style.opacity = currentX / threshold;
+        }
+    };
+
+    const handleEnd = () => {
+        content.style.transition = 'transform 0.3s cubic-bezier(0.18, 0.89, 0.32, 1.28)';
+        if (isSliding && currentX >= threshold) {
+            const bar = document.getElementById('admin-reply-preview-bar');
+            const previewText = document.getElementById('admin-reply-preview-text');
+            adminReplyingTo = { name, text };
+            if (bar && previewText) {
+                previewText.textContent = `Replying to ${name}: "${text.substring(0, 40)}..."`;
+                bar.style.display = 'flex';
+                document.getElementById('admin-live-chat-input')?.focus();
+            }
+        }
+        content.style.transform = 'translateX(0px)';
+        indicator.style.opacity = 0;
+        startX = 0; currentX = 0; isSliding = false;
+    };
+    
+    wrapper.addEventListener('touchstart', handleStart, { passive: true });
+    wrapper.addEventListener('touchmove', handleMove, { passive: false });
+    wrapper.addEventListener('touchend', handleEnd);
+    wrapper.addEventListener('mousedown', handleStart);
+    window.addEventListener('mousemove', (e) => { if(startX > 0) handleMove(e); });
+    window.addEventListener('mouseup', () => { if(startX > 0) handleEnd(); });
 }
 
 // --- 2. Cloudinary Upload ---

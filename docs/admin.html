@@ -23,7 +23,6 @@
             <a href="index.html" style="display: block; margin-top: 1rem; font-size: 1.2rem;">Back to Home</a>
             <a href="#" id="forgot-password-link">Forgot Password?</a>
         </section>
-             <div id="admin-typing-indicator"></div>
         <section id="admin-panel" style="display: none;">
             <header style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 2rem;">
                 <h1>Dashboard</h1>
@@ -104,31 +103,21 @@
 
             <!-- Tab 5: Live Community Chat -->
             <div id="live-chat-tab" class="tab-content">
-          <div style="display: flex; gap: 1rem; height: 650px;">
+          <div class="admin-chat-wrapper">
 
     <!-- LEFT: Inbox -->
-    <div style="width: 35%; border-right: 1px solid #e2e8f0; padding-right: 1rem; overflow-y: auto;">
-        <h3>Inbox</h3>
-
+    <div class="admin-chat-sidebar">
+        <h3 style="margin-top: 0;">Inbox</h3>
         <div id="admin-recent-threads-list"></div>
-
-        <hr>
-
-        <h4>Online Users</h4>
-        <div id="admin-online-users-list"></div>
     </div>
 
     <!-- RIGHT: Chat -->
-    <div style="flex: 1; display: flex; flex-direction: column;">
-
+    <div class="admin-chat-main">
         <h3 id="admin-chat-header-title">Select a conversation</h3>
+        <div id="admin-live-messages" class="admin-messages-list"></div>
 
-        <div id="admin-live-messages"
-            style="flex: 1; overflow-y: auto; background: #f8fafc; padding: 1rem; border-radius: 8px;">
-        </div>
-
-        <form id="admin-live-chat-form" style="display:flex; gap:10px; margin-top: 1rem;">
-            <input type="text" id="admin-live-chat-input" placeholder="Type message..." style="flex:1;">
+        <form id="admin-live-chat-form" class="admin-chat-form">
+            <input type="text" id="admin-live-chat-input" placeholder="Type message...">
             <button type="submit">Send</button>
         </form>
     </div>

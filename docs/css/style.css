@@ -947,16 +947,21 @@ button:active {
     box-shadow: 0 1px 3px rgba(0,0,0,0.08);
     position: relative;
     word-wrap: break-word;
+    margin: 0;
 }
-.live-msg.me {
-    align-self: flex-end;
+
+.slide-wrapper.me .live-msg,
+.slide-wrapper.me .slide-content .live-msg {
+    align-self: flex-end !important;
     background: linear-gradient(135deg, var(--primary), var(--primary-hover));
     color: white;
     border-bottom-right-radius: 4px;
     margin-left: auto;
 }
-.live-msg.other {
-    align-self: flex-start;
+
+.slide-wrapper.other .live-msg,
+.slide-wrapper.other .slide-content .live-msg {
+    align-self: flex-start !important;
     background: #ffffff;
     color: var(--dark);
     border-bottom-left-radius: 4px;
@@ -970,7 +975,7 @@ button:active {
     margin-bottom: 0.3rem;
     font-weight: 600;
 }
-.live-msg.me small {
+.slide-wrapper.me .live-msg small {
     text-align: right;
 }
 /* Private DM Specifics */
@@ -1007,13 +1012,31 @@ button:active {
     overflow: hidden;
     user-select: none;
     touch-action: pan-y;
-    margin-bottom: 0.4rem;
+    display: flex;
+    flex-direction: column;
+    width: 100%;
+    height: auto;
+    min-height: min-content;
+    margin-bottom: 8px;
+    padding: 2px 0;
+    box-sizing: border-box;
+    flex-shrink: 0;
 }
+
 .slide-content {
     position: relative;
+    width: 100%;
+    display: flex;
+    flex-direction: column;
     z-index: 2;
-    background: var(--white);
     transition: transform 0.2s cubic-bezier(0.25, 0.46, 0.45, 0.94);
+}
+
+/* Keep full-width and background for community stream items only */
+.stream-item .slide-content,
+.user-msg-slide .slide-content,
+.author-reply-slide .slide-content {
+    background: var(--white);
     width: 100%;
 }
 .slide-reply-indicator {
@@ -1068,4 +1091,124 @@ button:active {
     text-transform: uppercase;
     font-size: 0.65rem;
     margin-bottom: 0.1rem;
+}
+
+/* --- Admin Live Chat Layout Improvements --- */
+.admin-chat-wrapper {
+    display: flex;
+    gap: 1.5rem;
+    height: 700px; /* Fixed height is more reliable for independent scrolls */
+    min-height: 600px;
+    max-height: 80vh;
+    overflow: hidden; 
+    background: var(--white);
+    border-radius: 12px;
+    padding: 1.5rem;
+    box-shadow: var(--shadow);
+    border: 1px solid #e2e8f0;
+    box-sizing: border-box;
+}
+
+.admin-chat-sidebar {
+    width: 320px;
+    flex-shrink: 0;
+    display: flex;
+    flex-direction: column;
+    border-right: 1px solid #e2e8f0;
+    padding-right: 1.5rem;
+    height: 100%; /* Fill wrapper height */
+    overflow-y: auto;
+    scrollbar-width: thin;
+}
+
+.admin-chat-main {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+    height: 100%; /* Fill wrapper height */
+    overflow: hidden; /* Prevent main area from growing */
+}
+
+.thread-item {
+    padding: 0.8rem;
+    border-radius: 8px;
+    background: #f8fafc;
+    border: 1px solid #e2e8f0;
+    cursor: pointer;
+    margin-bottom: 8px;
+    transition: all 0.2s ease;
+}
+
+.thread-item.active {
+    background: #dbeafe !important;
+    border-color: var(--primary) !important;
+    border-left: 4px solid var(--primary) !important;
+}
+
+.admin-messages-list {
+    flex: 1;
+    min-height: 0; /* Critical for flexbox children to scroll correctly */
+    overflow-y: auto;
+    background: #f8fafc;
+    padding: 1rem;
+    border-radius: 8px;
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+    scrollbar-width: thin;
+}
+
+.admin-chat-form {
+    display: flex;
+    gap: 10px;
+    margin-top: 1rem;
+}
+
+/* Reply Previews in Live Chat */
+.reply-preview-bar {
+    background: #f1f5f9;
+    padding: 8px 12px;
+    border-left: 4px solid var(--primary);
+    display: none;
+    justify-content: space-between;
+    align-items: center;
+    font-size: 0.85rem;
+    border-radius: 8px 8px 0 0;
+    margin-bottom: -1px;
+    z-index: 5;
+    width: 100%;
+    box-sizing: border-box;
+}
+.reply-preview-bar span {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    max-width: 80%;
+}
+.reply-preview-bar i {
+    cursor: pointer;
+    color: var(--gray);
+    padding: 4px;
+}
+.reply-preview-bar i:hover { color: var(--danger); }
+
+.reply-preview-in-msg {
+    font-size: 0.75rem;
+    opacity: 0.9;
+    background: rgba(0,0,0,0.05);
+    padding: 6px 10px;
+    border-radius: 6px;
+    margin-bottom: 8px;
+    border-left: 3px solid var(--primary);
+}
+.live-msg.me .reply-preview-in-msg {
+    background: rgba(255,255,255,0.1);
+    color: white;
+    border-left-color: rgba(255,255,255,0.5);
+}
+
+.admin-chat-form input {
+    flex: 1;
+    margin-bottom: 0;
 }

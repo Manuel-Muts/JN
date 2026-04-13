@@ -2,13 +2,11 @@
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js";
 import { getAuth, createUserWithEmailAndPassword, signInWithEmailAndPassword, onAuthStateChanged, signOut } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-auth.js";
 import { getFirestore, collection, addDoc, query, orderBy, getDocs, serverTimestamp, where, updateDoc, doc, increment, limit, startAfter, onSnapshot, getDoc, setDoc, arrayUnion, limitToLast as firestoreLimitToLast } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
-import { getDatabase, ref, onValue, set, onDisconnect, push, serverTimestamp as rdbTimestamp, limitToLast, query as rdbQuery, off } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-database.js";
 import { SharedComponents } from "./components.js";
 
 const firebaseConfig = {
   apiKey: "AIzaSyBIGqZLYcDg3CR5VamDwBhtOOfl2Y0NYeI",
   authDomain: "timotech-films.firebaseapp.com",
-  databaseURL: "https://timotech-films-default-rtdb.firebaseio.com",
   projectId: "timotech-films",
   storageBucket: "timotech-films.firebasestorage.app",
   messagingSenderId: "563809562931",
@@ -18,7 +16,6 @@ const firebaseConfig = {
 const app = initializeApp(firebaseConfig);
 const auth = getAuth(app);
 const db = getFirestore(app);
-const rdb = getDatabase(app);
 
 let allPosts = [];
 let currentUser = null;
@@ -27,6 +24,7 @@ let activeLiveChatRef = null;
 let activeTypingRef = null;
 let isInitialLiveLoad = true;
 const chatNotification = new Audio('https://assets.mixkit.co/active_storage/sfx/2358/2358-preview.mp3');
+let clientReplyingTo = null;
 let currentUserData = { likedPosts: [] };
 let currentPostIdForReply = null;
 let currentPostTitleForReply = null;
@@ -224,79 +222,92 @@ cancelLogoutBtn?.addEventListener('click', () => {
 
 confirmLogoutBtn?.addEventListener('click', () => {
     logoutConfirmModal.style.display = 'none';
-    signOut(auth).then(() => {
-        window.location.href = 'index.html';
-    }).catch(console.error);
+    if (currentUser) {
+        // Mark user offline in Firestore before logging out
+        updateDoc(doc(db, "users", currentUser.uid), { isOnline: false, lastSeen: serverTimestamp() })
+            .catch(() => {}) // Ignore errors if connection is already lost
+            .finally(() => {
+                signOut(auth).then(() => { window.location.href = 'index.html'; });
+            });
+    } else {
+        signOut(auth).then(() => { window.location.href = 'index.html'; });
+    }
 });
 
 onAuthStateChanged(auth, async (user) => {
     currentUser = user;
+
     const isClientPage = window.location.pathname.includes('client.html');
     const isIndexPage = window.location.pathname.includes('index.html') || window.location.pathname.endsWith('/');
 
     if (user) {
         if (userAuthModalBtn) userAuthModalBtn.style.display = 'none';
         if (profileNav) profileNav.style.display = 'flex';
-        
+
         const userSnap = await getDoc(doc(db, "users", user.uid));
         const data = userSnap.data() || {};
         currentUserData = { ...data, likedPosts: data.likedPosts || [] };
-        if (displayNameSpan) displayNameSpan.textContent = currentUserData.firstName || user.email.split('@')[0];
-        
-        // Auto-fill name fields for members
-        const modalCommNameInput = document.getElementById('modal-user-name');
+
+        if (displayNameSpan) {
+            displayNameSpan.textContent =
+                currentUserData.firstName || user.email.split('@')[0];
+        }
+
         const fullName = `${currentUserData.firstName || ''} ${currentUserData.lastName || ''}`.trim();
+
+        const modalCommNameInput = document.getElementById('modal-user-name');
         if (modalCommNameInput) modalCommNameInput.value = fullName;
 
-        // Setup UI for members
-        const chatTabBtn = document.getElementById('live-chat-tab-btn');
-        if (chatTabBtn) chatTabBtn.style.display = 'flex';
-        
-        const openDmBtn = document.getElementById('open-dm-btn');
-        if (openDmBtn) openDmBtn.style.display = 'flex';
+        document.getElementById('live-chat-tab-btn')?.style.setProperty('display', 'flex');
+        document.getElementById('open-dm-btn')?.style.setProperty('display', 'flex');
 
         setupUserChatListener();
+
         if (!presenceInitialized) {
             setupPresence(user, fullName);
             presenceInitialized = true;
         }
+
         setupLiveChat();
+
     } else {
         if (userAuthModalBtn) userAuthModalBtn.style.display = 'block';
         if (profileNav) profileNav.style.display = 'none';
+
         currentUserData = { likedPosts: [] };
 
-        // Clear name field for guest access
-        const modalCommNameInput = document.getElementById('modal-user-name');
-        if (modalCommNameInput) modalCommNameInput.value = '';
+        document.getElementById('modal-user-name')?.value = '';
+        document.getElementById('live-chat-tab-btn')?.style.setProperty('display', 'none');
+        document.getElementById('open-dm-btn')?.style.setProperty('display', 'none');
 
-        const chatTabBtn = document.getElementById('live-chat-tab-btn');
-        if (chatTabBtn) chatTabBtn.style.display = 'none';
-
-        const openDmBtn = document.getElementById('open-dm-btn');
-        if (openDmBtn) openDmBtn.style.display = 'none';
-
-        // Protect the client page from guests
         if (isClientPage) {
             window.location.href = 'index.html';
             return;
         }
-        const liveChatSect = document.getElementById('live-chat-section');
-        if (liveChatSect) liveChatSect.style.display = 'none';
 
-        // Reset to stories tab if guest is on a restricted tab
+        document.getElementById('live-chat-section')?.style.setProperty('display', 'none');
+
         const storiesTabBtn = document.querySelector('[data-tab="stories-tab"]');
         if (storiesTabBtn) storiesTabBtn.click();
 
         if (userChatListener) userChatListener();
         userChatListener = null;
 
-        // Cleanup RDB listeners and reset presence state
-        if (activeLiveChatRef) off(activeLiveChatRef);
-        off(ref(rdb, 'status'));
+        // ✅ CLEAN unsubscribe handling
+        if (activeLiveChatRef) {
+            activeLiveChatRef();
+            activeLiveChatRef = null;
+        }
+
+        if (activeTypingRef) {
+            activeTypingRef();
+            activeTypingRef = null;
+        }
+
         presenceInitialized = false;
     }
-    renderPosts(allPosts); // Refresh view to update like buttons
+
+    renderPosts(allPosts);
 });
 
 /**
@@ -316,6 +327,10 @@ function setupTabs() {
             tab.classList.add('active');
             document.getElementById(target)?.classList.add('active');
 
+            // Clear notification when user opens the chat tab
+            if (target === 'live-chat-section' && currentUser) {
+                updateDoc(doc(db, "chat_summaries", currentUser.uid), { unreadByUser: false }).catch(() => {});
+            }
             // Load data for specific tabs when opened
             if (target === 'community-tab') {
                 loadChats();
@@ -325,52 +340,35 @@ function setupTabs() {
     tabsInitialized = true;
 }
 /**
- * Tracks user presence using Realtime Database
+ * Tracks user presence using Firestore
  */
 function setupPresence(user, fullName) {
-    const statusRef = ref(rdb, `status/${user.uid}`);
-    const connectedRef = ref(rdb, '.info/connected');
+    const userRef = doc(db, "users", user.uid);
+    
+    // Set online status in Firestore
+    updateDoc(userRef, {
+        isOnline: true,
+        lastSeen: serverTimestamp()
+    }).catch(console.error);
 
-    onValue(connectedRef, (snap) => {
-        if (snap.val() === true) {
-            // When I disconnect, update my status
-            onDisconnect(statusRef).set({
-                online: false,
-                lastChanged: rdbTimestamp()
-            });
-            // Set me as online
-            set(statusRef, {
-                online: true,
-                name: fullName || user.email.split('@')[0],
-                lastChanged: rdbTimestamp()
-            });
-        }
-    });
-
-    // Listen for all online users
+    // Listen for all online users via the users collection
     const usersUl = document.getElementById('users-ul');
     const countBadge = document.getElementById('online-count-badge');
     
     if (usersUl || countBadge) {
-        const allStatusRef = ref(rdb, 'status');
-        onValue(allStatusRef, (snap) => {
+        const q = query(collection(db, "users"), where("isOnline", "==", true));
+        onSnapshot(q, (snapshot) => {
             if (usersUl) usersUl.innerHTML = "";
-            let onlineCount = 0;
-            snap.forEach((child) => {
-                const val = child.val();
-                if (val.online) {
-                    onlineCount++;
-                    if (usersUl) {
-                        const li = document.createElement('li');
-                        li.className = "online-user-item";
-                        li.innerHTML = `<i class="fas fa-circle" style="color: var(--success); font-size: 0.6rem;"></i> ${val.name}`;
-                        usersUl.appendChild(li);
-                    }
-                }
+            let onlineCount = snapshot.size;
+            snapshot.forEach((docSnap) => {
+                const val = docSnap.data();
+                const li = document.createElement('li');
+                li.className = "online-user-item";
+                const name = val.firstName || "User";
+                li.innerHTML = `<i class="fas fa-circle" style="color: var(--success); font-size: 0.6rem;"></i> ${name}`;
+                if (usersUl) usersUl.appendChild(li);
             });
             if (countBadge) countBadge.textContent = `${onlineCount} Online`;
-        }, (error) => {
-            console.error("Presence Read Error:", error);
         });
     }
 }
@@ -385,9 +383,28 @@ function setupLiveChat() {
     const typingIndicator = document.getElementById('typing-indicator');
     if (!msgContainer || !chatForm || !currentUser) return;
 
+    // Inject reply preview bar if not exists
+    if (!document.getElementById('client-reply-preview-bar')) {
+        const bar = document.createElement('div');
+        bar.id = 'client-reply-preview-bar';
+        bar.className = 'reply-preview-bar';
+        bar.innerHTML = `<span id="client-reply-preview-text"></span><i class="fas fa-times" id="cancel-client-reply"></i>`;
+        chatForm.parentNode.insertBefore(bar, chatForm);
+        document.getElementById('cancel-client-reply').addEventListener('click', () => {
+            clientReplyingTo = null;
+            bar.style.display = 'none';
+        });
+    }
+
+    clientReplyingTo = null;
+    document.getElementById('client-reply-preview-bar').style.display = 'none';
+
     // Clean up existing listeners
     if (activeLiveChatRef) activeLiveChatRef();
-    if (activeTypingRef) off(activeTypingRef);
+    if (activeTypingRef) {
+        activeTypingRef();
+        activeTypingRef = null;
+    }
 
     // 1. Listen for messages in Firestore
     const q = query(collection(db, "direct_messages", currentUser.uid, "messages"), orderBy("timestamp", "asc"), firestoreLimitToLast(50));
@@ -396,42 +413,51 @@ function setupLiveChat() {
         snapshot.forEach((doc) => {
             const msg = doc.data();
             const timeStr = msg.timestamp?.toDate ? msg.timestamp.toDate().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '';
-            const div = document.createElement('div');
+            const wrapper = document.createElement('div');
             const isMe = msg.uid === currentUser.uid;
-            div.className = `live-msg ${isMe ? 'me' : 'other'}`;
-            div.innerHTML = `<small>${msg.name} • ${timeStr}</small>${msg.text}`;
-            msgContainer.appendChild(div);
+            wrapper.className = `slide-wrapper ${isMe ? 'me' : 'other'}`;
+            wrapper.innerHTML = `
+                <div class="slide-reply-indicator"><i class="fas fa-reply"></i> REPLY</div>
+                <div class="slide-content">
+                    <div class="live-msg">
+                        ${msg.replyTo ? `<div class="reply-preview-in-msg"><strong>${msg.replyTo.name}</strong>: ${msg.replyTo.text}</div>` : ''}
+                        <small>${msg.name} • ${timeStr}</small>${msg.text}
+                    </div>
+                </div>
+            `;
+            msgContainer.appendChild(wrapper);
+            initClientLiveChatReply(wrapper, msg.name, msg.text);
         });
         setTimeout(() => {
             msgContainer.scrollTo({ top: msgContainer.scrollHeight, behavior: 'smooth' });
         }, 50);
     });
 
-    // Typing Indicator Logic (Keep in RTDB for performance)
+    // Typing Indicator Logic in Firestore
     let typingTimeout;
-    const typingStatusRef = ref(rdb, `typing_status/${currentUser.uid}`);
-    onDisconnect(typingStatusRef).set(null);
+    const typingDocRef = doc(db, "typing_indicators", currentUser.uid);
 
     chatInput.addEventListener('input', () => {
-        set(typingStatusRef, {
+        setDoc(typingDocRef, {
             name: currentUserData.firstName || currentUser.email.split('@')[0],
-            isTyping: true
-        });
+            isTyping: true,
+            timestamp: serverTimestamp()
+        }, { merge: true });
+
         clearTimeout(typingTimeout);
-        typingTimeout = setTimeout(() => set(typingStatusRef, { isTyping: false }), 2500);
+        typingTimeout = setTimeout(() => updateDoc(typingDocRef, { isTyping: false }), 2500);
     });
 
-    activeTypingRef = ref(rdb, 'typing_status');
-    onValue(activeTypingRef, (snap) => {
+    const typingQuery = query(collection(db, "typing_indicators"), where("isTyping", "==", true));
+    activeTypingRef = onSnapshot(typingQuery, (snapshot) => {
         if (!typingIndicator) return;
         const typingUsers = [];
-        snap.forEach((child) => {
-            const val = child.val();
-            if (child.key !== currentUser.uid && val?.isTyping) {
-                typingUsers.push(val.name);
+        snapshot.forEach((docSnap) => {
+            if (docSnap.id !== currentUser.uid) {
+                typingUsers.push(docSnap.data().name);
             }
         });
-        typingIndicator.textContent = typingUsers.length > 0 ? `${typingUsers.join(', ')} ${typingUsers.length > 1 ? 'are' : 'is'} typing...` : "";
+        typingIndicator.textContent = typingUsers.length > 0 ? `${typingUsers.join(', ')} typing...` : "";
     });
 
     // Sending message
@@ -445,7 +471,8 @@ function setupLiveChat() {
                 uid: currentUser.uid,
                 name: `${currentUserData.firstName || ''} ${currentUserData.lastName || ''}`.trim() || currentUser.email.split('@')[0],
                 text: text,
-                timestamp: serverTimestamp()
+                timestamp: serverTimestamp(),
+                replyTo: clientReplyingTo
             };
 
             // 1. Save to the sub-collection for this user's specific thread
@@ -456,16 +483,72 @@ function setupLiveChat() {
                 name: messageData.name,
                 lastMessage: text,
                 timestamp: serverTimestamp(),
-                unreadByAdmin: true
+                unreadByAdmin: true,
+                unreadByUser: false
             }, { merge: true });
 
+            clientReplyingTo = null;
+            document.getElementById('client-reply-preview-bar').style.display = 'none';
             chatInput.value = "";
-            set(typingStatusRef, { isTyping: false });
+            updateDoc(typingDocRef, { isTyping: false });
         } catch (err) {
             console.error("Failed to send message:", err);
             alert("Message could not be sent. Please check your connection or permissions.");
         }
     };
+}
+
+/**
+ * Initializes the "Slide to Reply" gesture logic for Client Live Chat
+ */
+function initClientLiveChatReply(wrapper, name, text) {
+    const content = wrapper.querySelector('.slide-content');
+    const indicator = wrapper.querySelector('.slide-reply-indicator');
+    let startX = 0, currentX = 0, isSliding = false;
+    const threshold = 60;
+
+    const handleStart = (e) => {
+        startX = e.type.includes('touch') ? e.touches[0].clientX : e.clientX;
+        isSliding = false;
+        content.style.transition = 'none';
+    };
+
+    const handleMove = (e) => {
+        const x = e.type.includes('touch') ? e.touches[0].clientX : e.clientX;
+        const dx = x - startX;
+        if (Math.abs(dx) > 10) isSliding = true;
+
+        if (isSliding && dx > 0) {
+            if (e.cancelable) e.preventDefault();
+            currentX = Math.min(dx, 80);
+            content.style.transform = `translateX(${currentX}px)`;
+            indicator.style.opacity = currentX / threshold;
+        }
+    };
+
+    const handleEnd = () => {
+        content.style.transition = 'transform 0.3s cubic-bezier(0.18, 0.89, 0.32, 1.28)';
+        if (isSliding && currentX >= threshold) {
+            const bar = document.getElementById('client-reply-preview-bar');
+            const previewText = document.getElementById('client-reply-preview-text');
+            clientReplyingTo = { name, text };
+            if (bar && previewText) {
+                previewText.textContent = `Replying to ${name}: "${text.substring(0, 40)}..."`;
+                bar.style.display = 'flex';
+                document.getElementById('live-chat-input')?.focus();
+            }
+        }
+        content.style.transform = 'translateX(0px)';
+        indicator.style.opacity = 0;
+        startX = 0; currentX = 0; isSliding = false;
+    };
+    
+    wrapper.addEventListener('touchstart', handleStart, { passive: true });
+    wrapper.addEventListener('touchmove', handleMove, { passive: false });
+    wrapper.addEventListener('touchend', handleEnd);
+    wrapper.addEventListener('mousedown', handleStart);
+    window.addEventListener('mousemove', (e) => { if(startX > 0) handleMove(e); });
+    window.addEventListener('mouseup', () => { if(startX > 0) handleEnd(); });
 }
 
 // --- 1. Fetch and Display Blog Posts ---
