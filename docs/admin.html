@@ -104,31 +104,35 @@
 
             <!-- Tab 5: Live Community Chat -->
             <div id="live-chat-tab" class="tab-content">
-                <div class="interaction-box" style="position: sticky; top: 125px; z-index: 85; margin-bottom: 1.5rem; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.1); border-bottom: 2px solid var(--primary); display: flex; flex-direction: column; gap: 1rem;">
-                    <h3 style="margin: 0 0 0.8rem 0; font-size: 1.1rem;">Online Now (<span id="admin-online-count">0</span>)</h3>
-                    <div id="admin-online-users-list" style="display: flex; flex-wrap: wrap; gap: 10px; max-height: 120px; overflow-y: auto; padding-bottom: 5px;">
-                        <!-- Online users will be dynamically listed here -->
-                    </div>
-                    <hr style="border: 0; border-top: 1px solid #e2e8f0; margin: 0;">
-                    <h3 style="margin: 0; font-size: 1.1rem;">Recent Conversations</h3>
-                    <div id="admin-recent-threads-list" style="display: flex; flex-direction: column; gap: 5px; max-height: 250px; overflow-y: auto;">
-                        <!-- Chat threads will be dynamically listed here -->
-                    </div>
-                </div>
+          <div style="display: flex; gap: 1rem; height: 650px;">
 
-                <div class="interaction-box">
-                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem;">
-                        <h2 id="admin-chat-header-title" style="margin: 0;">Select a Conversation</h2>
-                    </div>
-                    <div id="admin-live-messages" style="height: 450px; overflow-y: auto; display: flex; flex-direction: column; gap: 10px; padding: 1rem; background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; margin-bottom: 1rem;">
-                        <!-- Messages injected by JS -->
-                    </div>
-                    <form id="admin-live-chat-form" style="display: flex; gap: 10px;">
-                        <input type="text" id="admin-live-chat-input" placeholder="Post a message as Admin..." style="margin: 0; flex: 1;">
-                        <button type="submit">Send</button>
-                    </form>
-                </div>
-            </div>
+    <!-- LEFT: Inbox -->
+    <div style="width: 35%; border-right: 1px solid #e2e8f0; padding-right: 1rem; overflow-y: auto;">
+        <h3>Inbox</h3>
+
+        <div id="admin-recent-threads-list"></div>
+
+        <hr>
+
+        <h4>Online Users</h4>
+        <div id="admin-online-users-list"></div>
+    </div>
+
+    <!-- RIGHT: Chat -->
+    <div style="flex: 1; display: flex; flex-direction: column;">
+
+        <h3 id="admin-chat-header-title">Select a conversation</h3>
+
+        <div id="admin-live-messages"
+            style="flex: 1; overflow-y: auto; background: #f8fafc; padding: 1rem; border-radius: 8px;">
+        </div>
+
+        <form id="admin-live-chat-form" style="display:flex; gap:10px; margin-top: 1rem;">
+            <input type="text" id="admin-live-chat-input" placeholder="Type message..." style="flex:1;">
+            <button type="submit">Send</button>
+        </form>
+    </div>
+</div>
         </section>
     </div>
 

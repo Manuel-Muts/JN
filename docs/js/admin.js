@@ -252,7 +252,7 @@ document.getElementById('login-btn').addEventListener('click', async () => {
         alert("Login failed: " + err.message);
         // Reset button state only on failure (success hides the section)
         loginBtn.disabled = false;
-        loginBtn.innerText = "Login to Dashboard";
+        loginBtn.innerText = "Login";
     }
 });
 
@@ -471,7 +471,7 @@ function setupAdminPresence(adminUser, adminName) {
  */
 function setupChatThreadsListener(adminUser) {
     if (adminThreadsRef) off(adminThreadsRef);
-
+    
     const threadsList = document.getElementById('admin-recent-threads-list');
     if (!threadsList) return;
 
@@ -511,10 +511,22 @@ function setupChatThreadsListener(adminUser) {
 
         // Sort threads by the most recent interaction
         threads.sort((a, b) => b.timestamp - a.timestamp);
-
+        if (threads.length > 0 && !activeTargetUserId) {
+    const first = threads[0];
+    setupAdminLiveChat(adminUser, first.uid, first.name);
+    }
+       if (!activeTargetUserId && threads.length > 0) {
+    const first = threads[0];
+    setupAdminLiveChat(adminUser, first.uid, first.name);
+      }
         threads.forEach(thread => {
             const div = document.createElement('div');
             div.className = "thread-item";
+
+             if (thread.uid === activeTargetUserId) {
+        div.style.background = "#dbeafe";
+        div.style.borderLeft = "4px solid var(--primary)";
+    }
             div.style.cssText = `
                 padding: 0.8rem;
                 border-radius: 8px;
@@ -528,7 +540,10 @@ function setupChatThreadsListener(adminUser) {
                 <div style="display: flex; justify-content: space-between; font-weight: 600; font-size: 0.85rem;"><span>${thread.name}</span></div>
                 <div style="font-size: 0.75rem; color: var(--gray); white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">${thread.lastText}</div>
             `;
-            div.onclick = () => setupAdminLiveChat(adminUser, thread.uid, thread.name);
+           div.onclick = () => {
+        activeTargetUserId = thread.uid;
+          setupAdminLiveChat(adminUser, thread.uid, thread.name);
+         };
             threadsList.appendChild(div);
         });
     });
@@ -549,18 +564,16 @@ function setupAdminLiveChat(adminUser, targetUserId = null, targetUserName = nul
 
     activeTargetUserId = targetUserId;
 
-    if (targetUserId) {
-        if (headerTitle) headerTitle.textContent = `Chat with ${targetUserName}`;
-        chatForm.style.display = "flex";
-    } else {
-        if (headerTitle) headerTitle.textContent = "Select a Conversation";
-        msgContainer.innerHTML = `<div style="text-align:center; padding: 3rem 1rem; color: var(--gray);">
+   if (!targetUserId) {
+    headerTitle.textContent = "Live Conversations";
+    msgContainer.innerHTML = `
+        <div style="text-align:center; padding: 3rem 1rem; color: var(--gray);">
             <i class="fas fa-comments" style="font-size: 3rem; margin-bottom: 1rem; opacity: 0.3;"></i>
-            <p>Please select an online user or a recent thread to start a 1-on-1 conversation.</p>
+            <p>Select a conversation from the list to view messages</p>
         </div>`;
-        chatForm.style.display = "none";
-        return;
-    }
+    chatForm.style.display = "none";
+    return;
+     }
 
     const chatPath = `private_chats/${targetUserId}`;
 
