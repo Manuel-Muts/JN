@@ -1,6 +1,6 @@
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js";
 import { getAuth, signInWithEmailAndPassword, onAuthStateChanged, signOut } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-auth.js";
-import { getFirestore, collection, addDoc, query, orderBy, getDocs, updateDoc, doc, onSnapshot, deleteDoc, getDoc, serverTimestamp, where, getCountFromServer, limit, startAfter } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
+import { getFirestore, collection, addDoc, query, orderBy, getDocs, updateDoc, doc, onSnapshot, deleteDoc, getDoc, serverTimestamp, where, getCountFromServer, limit, startAfter, limitToLast as firestoreLimitToLast, setDoc } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
 import { getDatabase, ref, onValue, set, onDisconnect, push, serverTimestamp as rdbTimestamp, limitToLast, query as rdbQuery, off } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-database.js";
 import { SharedComponents } from "./components.js";
 
@@ -470,44 +470,27 @@ function setupAdminPresence(adminUser, adminName) {
  * Listens to all private chat threads to group them separately for the admin
  */
 function setupChatThreadsListener(adminUser) {
-    if (adminThreadsRef) off(adminThreadsRef);
-    
     const threadsList = document.getElementById('admin-recent-threads-list');
     if (!threadsList) return;
 
-    adminThreadsRef = ref(rdb, 'chat_list');
-    onValue(adminThreadsRef, (snap) => {
+    // Listen for chat summaries in Firestore
+    const q = query(collection(db, "chat_summaries"), orderBy("timestamp", "desc"));
+    onSnapshot(q, (snapshot) => {
         threadsList.innerHTML = "";
-        if (!snap.exists() || !snap.hasChildren()) {
+        if (snapshot.empty) {
             threadsList.innerHTML = "<p style='text-align:center; padding: 1rem; color: var(--gray); font-size: 0.8rem;'>No message history.</p>";
             return;
         }
 
-        const threads = [];
-        snap.forEach((child) => {
-            const data = child.val();
-            threads.push({
-                uid: child.key,
-                name: data.name || "Logged-in Client",
-                lastText: data.lastMessage || "",
-                timestamp: data.timestamp || 0
-            });
-        });
-
-        // Sort threads by the most recent interaction
-        threads.sort((a, b) => b.timestamp - a.timestamp);
-
-        if (!activeTargetUserId && threads.length > 0) {
-            const first = threads[0];
-            setupAdminLiveChat(adminUser, first.uid, first.name);
-        }
-
-        threads.forEach(thread => {
+        snapshot.forEach((docSnap) => {
+            const thread = { uid: docSnap.id, ...docSnap.data() };
             const div = document.createElement('div');
-            div.className = "thread-item";
+            const isUnread = thread.unreadByAdmin === true;
+            div.className = `thread-item ${isUnread ? 'unread-thread' : ''}`;
 
              if (thread.uid === activeTargetUserId) {
         div.style.background = "#dbeafe";
+        div.style.borderColor = "var(--primary)";
         div.style.borderLeft = "4px solid var(--primary)";
     }
             div.style.cssText = `
@@ -520,13 +503,21 @@ function setupChatThreadsListener(adminUser) {
                 transition: background 0.2s;
             `;
             div.innerHTML = `
-                <div style="display: flex; justify-content: space-between; font-weight: 600; font-size: 0.85rem;"><span>${thread.name}</span></div>
-                <div style="font-size: 0.75rem; color: var(--gray); white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">${thread.lastText}</div>
+                <div style="display: flex; justify-content: space-between; font-weight: 600; font-size: 0.85rem;">
+                    <span>${thread.name}</span>
+                    ${isUnread ? '<span style="color: var(--danger); font-size: 0.7rem;">● New</span>' : ''}
+                </div>
+                <div style="font-size: 0.75rem; color: var(--gray); white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">${thread.lastMessage}</div>
             `;
-           div.onclick = () => {
+           div.onclick = async () => {
         activeTargetUserId = thread.uid;
-          setupAdminLiveChat(adminUser, thread.uid, thread.name);
-         };
+        setupAdminLiveChat(adminUser, thread.uid, thread.name);
+        
+        // Mark as read when admin clicks
+        if (isUnread) {
+            await updateDoc(doc(db, "chat_summaries", thread.uid), { unreadByAdmin: false });
+        }
+    };
             threadsList.appendChild(div);
         });
     });
@@ -558,21 +549,19 @@ function setupAdminLiveChat(adminUser, targetUserId = null, targetUserName = nul
     return;
      }
 
-    const chatPath = `private_chats/${targetUserId}`;
-
     // Clean up existing listeners before starting a new one
-    if (activeAdminLiveChatRef) off(activeAdminLiveChatRef);
+    if (activeAdminLiveChatRef) activeAdminLiveChatRef();
     if (activeAdminTypingRef) off(activeAdminTypingRef);
     isInitialAdminLiveLoad = true;
 
-    activeAdminLiveChatRef = rdbQuery(ref(rdb, chatPath), limitToLast(50));
-    onValue(activeAdminLiveChatRef, (snap) => {
+    const q = query(collection(db, "direct_messages", targetUserId, "messages"), orderBy("timestamp", "asc"), firestoreLimitToLast(50));
+    activeAdminLiveChatRef = onSnapshot(q, (snapshot) => {
         let lastMsgUid = null;
         msgContainer.innerHTML = "";
-        snap.forEach((child) => {
-            const msg = child.val();
+        snapshot.forEach((doc) => {
+            const msg = doc.data();
             lastMsgUid = msg.uid;
-            const timeStr = msg.timestamp ? new Date(msg.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '';
+            const timeStr = msg.timestamp?.toDate ? msg.timestamp.toDate().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '';
             
             const div = document.createElement('div');
             const isMe = msg.uid === adminUser.uid;
@@ -618,14 +607,25 @@ function setupAdminLiveChat(adminUser, targetUserId = null, targetUserName = nul
     chatForm.onsubmit = async (e) => {
         e.preventDefault();
         const text = chatInput.value.trim();
-        if (!text) return;
+        if (!text || !targetUserId) return;
         try {
-            await push(ref(rdb, chatPath), {
+            const messageData = {
                 uid: adminUser.uid,
                 name: "Admin",
                 text: text,
-                timestamp: Date.now()
-            });
+                timestamp: serverTimestamp()
+            };
+
+            // 1. Save to the user's specific thread in Firestore
+            await addDoc(collection(db, "direct_messages", targetUserId, "messages"), messageData);
+
+            // 2. Update the summary so the last message is visible in the sidebar
+            await setDoc(doc(db, "chat_summaries", targetUserId), {
+                lastMessage: text,
+                timestamp: serverTimestamp(),
+                unreadByAdmin: false
+            }, { merge: true });
+
             chatInput.value = "";
             set(typingStatusRef, { isTyping: false });
         } catch (err) {

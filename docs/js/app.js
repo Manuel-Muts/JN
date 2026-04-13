@@ -1,7 +1,7 @@
 // --- Firebase Imports & Initialization ---
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js";
 import { getAuth, createUserWithEmailAndPassword, signInWithEmailAndPassword, onAuthStateChanged, signOut } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-auth.js";
-import { getFirestore, collection, addDoc, query, orderBy, getDocs, serverTimestamp, where, updateDoc, doc, increment, limit, startAfter, onSnapshot, getDoc, setDoc, arrayUnion } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
+import { getFirestore, collection, addDoc, query, orderBy, getDocs, serverTimestamp, where, updateDoc, doc, increment, limit, startAfter, onSnapshot, getDoc, setDoc, arrayUnion, limitToLast as firestoreLimitToLast } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
 import { getDatabase, ref, onValue, set, onDisconnect, push, serverTimestamp as rdbTimestamp, limitToLast, query as rdbQuery, off } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-database.js";
 import { SharedComponents } from "./components.js";
 
@@ -386,39 +386,28 @@ function setupLiveChat() {
     if (!msgContainer || !chatForm || !currentUser) return;
 
     // Clean up existing listeners
-    if (activeLiveChatRef) off(activeLiveChatRef);
+    if (activeLiveChatRef) activeLiveChatRef();
     if (activeTypingRef) off(activeTypingRef);
-    isInitialLiveLoad = true;
 
-    // Listen for private 1-on-1 messages between this user and Admin
-    const chatPath = `private_chats/${currentUser.uid}`;
-    activeLiveChatRef = rdbQuery(ref(rdb, chatPath), limitToLast(50));
-    onValue(activeLiveChatRef, (snap) => {
-        let lastMsgUid = null;
+    // 1. Listen for messages in Firestore
+    const q = query(collection(db, "direct_messages", currentUser.uid, "messages"), orderBy("timestamp", "asc"), firestoreLimitToLast(50));
+    activeLiveChatRef = onSnapshot(q, (snapshot) => {
         msgContainer.innerHTML = "";
-        snap.forEach((child) => {
-            const msg = child.val();
-            lastMsgUid = msg.uid;
-            const timeStr = msg.timestamp ? new Date(msg.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '';
+        snapshot.forEach((doc) => {
+            const msg = doc.data();
+            const timeStr = msg.timestamp?.toDate ? msg.timestamp.toDate().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '';
             const div = document.createElement('div');
             const isMe = msg.uid === currentUser.uid;
             div.className = `live-msg ${isMe ? 'me' : 'other'}`;
             div.innerHTML = `<small>${msg.name} • ${timeStr}</small>${msg.text}`;
             msgContainer.appendChild(div);
         });
-
-        if (!isInitialLiveLoad && lastMsgUid && lastMsgUid !== currentUser.uid) {
-            chatNotification.play().catch(e => console.log("Sound blocked until user interacts with page."));
-        }
-        isInitialLiveLoad = false;
         setTimeout(() => {
             msgContainer.scrollTo({ top: msgContainer.scrollHeight, behavior: 'smooth' });
         }, 50);
-    }, (error) => {
-        console.error("Live Chat Read Error:", error);
     });
 
-    // Typing Indicator Logic
+    // Typing Indicator Logic (Keep in RTDB for performance)
     let typingTimeout;
     const typingStatusRef = ref(rdb, `typing_status/${currentUser.uid}`);
     onDisconnect(typingStatusRef).set(null);
@@ -452,20 +441,24 @@ function setupLiveChat() {
         if (!text) return;
 
         try {
-            // 1. Push the message to the conversation thread
-            await push(ref(rdb, chatPath), {
+            const messageData = {
                 uid: currentUser.uid,
                 name: `${currentUserData.firstName || ''} ${currentUserData.lastName || ''}`.trim() || currentUser.email.split('@')[0],
                 text: text,
-                timestamp: Date.now()
-            });
+                timestamp: serverTimestamp()
+            };
 
-            // 2. Update the admin's chat list summary
-            await set(ref(rdb, `chat_list/${currentUser.uid}`), {
-                name: `${currentUserData.firstName || ''} ${currentUserData.lastName || ''}`.trim() || currentUser.email,
+            // 1. Save to the sub-collection for this user's specific thread
+            await addDoc(collection(db, "direct_messages", currentUser.uid, "messages"), messageData);
+
+            // 2. Update the global summary list for the Admin dashboard
+            await setDoc(doc(db, "chat_summaries", currentUser.uid), {
+                name: messageData.name,
                 lastMessage: text,
-                timestamp: Date.now()
-            });
+                timestamp: serverTimestamp(),
+                unreadByAdmin: true
+            }, { merge: true });
+
             chatInput.value = "";
             set(typingStatusRef, { isTyping: false });
         } catch (err) {
