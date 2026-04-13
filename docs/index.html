@@ -131,7 +131,10 @@
 </audio>
 
 <button id="back-to-top" title="Back to top">↑</button>
-<button id="music-toggle">🎧</button>
+<div id="music-controls">
+    <input type="range" id="volume-slider" min="0" max="1" step="0.01" value="0.5">
+    <button id="music-toggle">🎧</button>
+</div>
 
     <script type="module" src="js/ui.js"></script>
     <!-- Reply Modal moved out of the cookie banner -->

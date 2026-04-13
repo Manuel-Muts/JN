@@ -503,17 +503,38 @@ nav.scrolled {
     }
 }
 
-#music-toggle {
+#music-controls {
     position: fixed;
     bottom: 20px;
     right: 20px;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    background: white;
+    padding: 6px 15px;
+    border-radius: 50px;
+    box-shadow: var(--shadow);
+    z-index: 101;
+}
+
+#music-toggle {
     background: var(--primary);
     color: white;
     border-radius: 50%;
-    padding: 12px;
+    width: 40px;
+    height: 40px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
     font-size: 1.2rem;
-    box-shadow: var(--shadow);
     cursor: pointer;
+    border: none;
+}
+
+#volume-slider {
+    width: 80px;
+    cursor: pointer;
+    accent-color: var(--primary);
 }
 
 #back-to-top {

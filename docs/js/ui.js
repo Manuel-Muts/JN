@@ -76,27 +76,42 @@ document.addEventListener('DOMContentLoaded', () => {
 // --- Background Music Toggle ---
 const music = document.getElementById("bg-music");
 const musicBtn = document.getElementById("music-toggle");
+const volumeSlider = document.getElementById("volume-slider");
 let playing = false;
 
 if (music && musicBtn) {
-    music.volume = 0.03;
+    // 0.5 (50%) volume is a good middle ground for testing
+    music.volume = 0.5; 
+
+    if (volumeSlider) {
+        volumeSlider.addEventListener("input", (e) => {
+            music.volume = e.target.value;
+        });
+    }
+
     if (localStorage.getItem("music") === "on") {
-        music.play().catch(() => console.log("Autoplay blocked"));
-        musicBtn.textContent = "⏸";
-        playing = true;
+        // Only change the icon/state if the browser actually allows the music to play
+        music.play().then(() => {
+            musicBtn.textContent = "⏸";
+            playing = true;
+        }).catch(() => console.log("Autoplay blocked: Click the button to start music."));
     }
 
     musicBtn.addEventListener("click", () => {
         if (!playing) {
-            music.play();
-            musicBtn.textContent = "⏸";
-            localStorage.setItem("music", "on");
+            music.play().then(() => {
+                musicBtn.textContent = "⏸";
+                localStorage.setItem("music", "on");
+                playing = true;
+            }).catch(err => {
+                alert("Could not play music. Please check if 'music/cecilwinas1.mp3' exists in your folder.");
+            });
         } else {
             music.pause();
             musicBtn.textContent = "🎧";
             localStorage.setItem("music", "off");
+            playing = false;
         }
-        playing = !playing;
     });
 }
 
