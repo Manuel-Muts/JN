@@ -17,6 +17,11 @@ const db = getFirestore(app);
 
 // Helper for character limit truncation
 const POST_PREVIEW_LIMIT = 150;
+const ADMIN_STATS_CACHE_KEY = 'admin_stats_cache';
+const ADMIN_TOP_POSTS_CACHE_KEY = 'admin_top_posts_cache';
+const ADMIN_THREADS_CACHE_KEY = 'admin_chat_threads_cache';
+const ADMIN_QUESTIONS_CACHE_KEY = 'admin_questions_cache';
+const ADMIN_CHAT_PREFIX = 'admin_chat_msg_';
 
 function getSnippet(content, limit = POST_PREVIEW_LIMIT) {
     const tempDiv = document.createElement("div");
@@ -35,6 +40,8 @@ function invalidateAdminCaches() {
     adminGeneralChats = [];
     adminStatsCache = null;
     adminTopLikedCache = null;
+    localStorage.removeItem(ADMIN_STATS_CACHE_KEY);
+    localStorage.removeItem(ADMIN_TOP_POSTS_CACHE_KEY);
 }
 
 // Initialize Quill editor
@@ -61,6 +68,7 @@ let chatThreadsListenerInitialized = false;
 const chatNotification = new Audio('https://assets.mixkit.co/active_storage/sfx/2358/2358-preview.mp3');
 let activeAdminLiveChatRef = null;
 let adminReplyingTo = null;
+let adminCommunityReplyingTo = null;
 let tabsInitialized = false;
 const ADMIN_CHATS_PER_PAGE = 10;
 let activeTargetUserId = null;
@@ -107,15 +115,24 @@ async function loadStatistics() {
     const mostCommentedPostTitleDisplay = document.getElementById('most-commented-post-title');
     
     try {
-        // Reset displays
-        if (likesDisplay) likesDisplay.textContent = '0';
-        if (mostLikedPostTitleDisplay) mostLikedPostTitleDisplay.textContent = 'N/A';
-        if (commentsDisplay) commentsDisplay.textContent = '0';
-        if (mostCommentedPostTitleDisplay) mostCommentedPostTitleDisplay.textContent = 'N/A';
+        // 1. Check memory and localStorage for instant UI
+        if (!adminStatsCache) {
+            const cached = localStorage.getItem(ADMIN_STATS_CACHE_KEY);
+            if (cached) {
+                try {
+                    adminStatsCache = JSON.parse(cached);
+                } catch (e) { console.error("Stats cache error:", e); }
+            }
+        }
 
-        if (adminStatsCache) {
-            renderStatsUI(adminStatsCache);
-            return;
+        if (adminStatsCache) renderStatsUI(adminStatsCache);
+
+        // If no cache at all, reset displays to initial loading state
+        if (!adminStatsCache) {
+            if (likesDisplay) likesDisplay.textContent = '0';
+            if (mostLikedPostTitleDisplay) mostLikedPostTitleDisplay.textContent = 'N/A';
+            if (commentsDisplay) commentsDisplay.textContent = '0';
+            if (mostCommentedPostTitleDisplay) mostCommentedPostTitleDisplay.textContent = 'N/A';
         }
 
         // 1. Get the single most liked post via query
@@ -157,6 +174,7 @@ async function loadStatistics() {
         }
 
         adminStatsCache = statsToCache;
+        localStorage.setItem(ADMIN_STATS_CACHE_KEY, JSON.stringify(adminStatsCache));
         renderStatsUI(adminStatsCache);
     } catch (err) {
         console.error("Error loading statistics:", err);
@@ -179,10 +197,16 @@ async function loadTopLikedPosts() {
     const topPostsList = document.getElementById('top-liked-posts-list');
     if (!topPostsList) return;
 
-    if (adminTopLikedCache) {
-        renderTopLikedUI(adminTopLikedCache);
-        return;
+    if (!adminTopLikedCache) {
+        const cached = localStorage.getItem(ADMIN_TOP_POSTS_CACHE_KEY);
+        if (cached) {
+            try {
+                adminTopLikedCache = JSON.parse(cached);
+            } catch (e) { console.error("Top posts cache error:", e); }
+        }
     }
+
+    if (adminTopLikedCache) renderTopLikedUI(adminTopLikedCache);
 
     topPostsList.innerHTML = '<p style="text-align: center;">Loading top posts...</p>';
 
@@ -191,6 +215,7 @@ async function loadTopLikedPosts() {
         const q = query(collection(db, "posts"), orderBy("likes", "desc"), limit(5));
         const querySnapshot = await getDocs(q);
         adminTopLikedCache = querySnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+        localStorage.setItem(ADMIN_TOP_POSTS_CACHE_KEY, JSON.stringify(adminTopLikedCache));
         renderTopLikedUI(adminTopLikedCache);
     } catch (err) {
         console.error("Error loading top liked posts:", err);
@@ -389,17 +414,32 @@ function setupChatThreadsListener(adminUser) {
     const threadsList = document.getElementById('admin-recent-threads-list');
     if (!threadsList) return;
 
+    // Load threads from cache for instant UI
+    const cached = localStorage.getItem(ADMIN_THREADS_CACHE_KEY);
+    if (cached) {
+        try {
+            const threads = JSON.parse(cached);
+            renderThreadsUI(threads, threadsList, adminUser);
+        } catch (e) { console.error("Threads cache error:", e); }
+    }
+
     // Listen for chat summaries in Firestore
     const q = query(collection(db, "chat_summaries"), orderBy("timestamp", "desc"));
     onSnapshot(q, (snapshot) => {
-        threadsList.innerHTML = "";
-        if (snapshot.empty) {
-            threadsList.innerHTML = "<p style='text-align:center; padding: 1rem; color: var(--gray); font-size: 0.8rem;'>No message history.</p>";
-            return;
-        }
+        const threads = snapshot.docs.map(docSnap => ({ uid: docSnap.id, ...docSnap.data() }));
+        localStorage.setItem(ADMIN_THREADS_CACHE_KEY, JSON.stringify(threads));
+        renderThreadsUI(threads, threadsList, adminUser);
+    });
+}
 
-        snapshot.forEach((docSnap) => {
-            const thread = { uid: docSnap.id, ...docSnap.data() };
+function renderThreadsUI(threads, container, adminUser) {
+    container.innerHTML = "";
+    if (threads.length === 0) {
+        container.innerHTML = "<p style='text-align:center; padding: 1rem; color: var(--gray); font-size: 0.8rem;'>No message history.</p>";
+        return;
+    }
+
+    threads.forEach((thread) => {
             const div = document.createElement('div');
             const isUnread = thread.unreadByAdmin === true;
             div.className = `thread-item ${isUnread ? 'unread-thread' : ''} ${thread.uid === activeTargetUserId ? 'active' : ''}`;
@@ -420,8 +460,7 @@ function setupChatThreadsListener(adminUser) {
             await updateDoc(doc(db, "chat_summaries", thread.uid), { unreadByAdmin: false });
         }
     };
-            threadsList.appendChild(div);
-        });
+    container.appendChild(div);
     });
 }
 
@@ -475,30 +514,26 @@ function setupAdminLiveChat(adminUser, targetUserId = null, targetUserName = nul
     }
     isInitialAdminLiveLoad = true;
 
+    // Load conversation from cache
+    const cacheKey = `${ADMIN_CHAT_PREFIX}${targetUserId}`;
+    const cached = localStorage.getItem(cacheKey);
+    if (cached) {
+        try {
+            const msgs = JSON.parse(cached);
+            renderMessagesUI(msgs, msgContainer, adminUser);
+            msgContainer.scrollTo({ top: msgContainer.scrollHeight });
+        } catch (e) { console.error("Chat cache error:", e); }
+    }
+
     const q = query(collection(db, "direct_messages", targetUserId, "messages"), orderBy("timestamp", "asc"), firestoreLimitToLast(50));
     activeAdminLiveChatRef = onSnapshot(q, (snapshot) => {
-        let lastMsgUid = null;
-        msgContainer.innerHTML = "";
-        snapshot.forEach((doc) => {
-            const msg = doc.data();
-            lastMsgUid = msg.uid;
-            const timeStr = msg.timestamp?.toDate ? msg.timestamp.toDate().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '';
-            
-            const wrapper = document.createElement('div');
-            const isMe = msg.uid === adminUser.uid;
-            wrapper.className = `slide-wrapper ${isMe ? 'me' : 'other'}`;
-            wrapper.innerHTML = `
-                <div class="slide-reply-indicator"><i class="fas fa-reply"></i> REPLY</div>
-                <div class="slide-content">
-                    <div class="live-msg">
-                        ${msg.replyTo ? `<div class="reply-preview-in-msg"><strong>${msg.replyTo.name}</strong>: ${msg.replyTo.text}</div>` : ''}
-                        <small>${msg.name} • ${timeStr}</small>${msg.text}
-                    </div>
-                </div>
-            `;
-            msgContainer.appendChild(wrapper);
-            initAdminLiveChatReply(wrapper, msg.name, msg.text);
-        });
+        const msgs = snapshot.docs.map(docSnap => docSnap.data());
+        localStorage.setItem(cacheKey, JSON.stringify(msgs));
+        
+        renderMessagesUI(msgs, msgContainer, adminUser);
+
+        const lastMsg = msgs[msgs.length - 1];
+        const lastMsgUid = lastMsg ? lastMsg.uid : null;
 
         if (!isInitialAdminLiveLoad && lastMsgUid && lastMsgUid !== adminUser.uid) {
             chatNotification.play().catch(e => console.log("Sound blocked until user interacts with page."));
@@ -544,6 +579,32 @@ function setupAdminLiveChat(adminUser, targetUserId = null, targetUserName = nul
             alert("Error sending message. Ensure your Admin UID is correctly set in the Database Rules.");
         }
     };
+}
+
+function renderMessagesUI(msgs, container, adminUser) {
+    container.innerHTML = "";
+    msgs.forEach((msg) => {
+        // Handle both Firestore Timestamp objects and serialized JSON dates from cache
+        const timeStr = msg.timestamp?.toDate 
+            ? msg.timestamp.toDate().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) 
+            : (msg.timestamp?.seconds ? new Date(msg.timestamp.seconds * 1000).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '');
+        
+        const wrapper = document.createElement('div');
+        const isMe = msg.uid === adminUser.uid;
+        wrapper.className = `slide-wrapper ${isMe ? 'me' : 'other'}`;
+        wrapper.innerHTML = `
+            <div class="slide-reply-indicator"><i class="fas fa-reply"></i> REPLY</div>
+            <div class="slide-content">
+                <div class="live-msg">
+                    ${msg.replyTo ? `<div class="reply-preview-in-msg"><strong>${msg.replyTo.name}</strong>: ${msg.replyTo.text}</div>` : ''}
+                    <small>${msg.name} • ${timeStr}</small>${msg.text}
+                </div>
+            </div>
+        `;
+        container.appendChild(wrapper);
+        // Re-initialize gesture listeners for newly rendered elements
+        initAdminLiveChatReply(wrapper, msg.name, msg.text);
+    });
 }
 
 /**
@@ -706,16 +767,28 @@ function loadAdminChats() {
     const chatsList = document.getElementById('chats-list');
     if (!chatsList) return;
 
+    // 1. Load from cache for instant UI
+    const cached = localStorage.getItem(ADMIN_QUESTIONS_CACHE_KEY);
+    if (cached && adminGeneralChats.length === 0) {
+        try {
+            adminGeneralChats = JSON.parse(cached);
+            displayAdminChats(adminGeneralChats, false);
+        } catch (e) { console.error("Questions cache error:", e); }
+    }
+
     if (globalChatsListener) globalChatsListener();
 
     const q = query(
-        collection(db, "chats"), 
+        collection(db, "chats"),
         orderBy("createdAt", "desc"),
         limit(50)
     );
 
     globalChatsListener = onSnapshot(q, (snapshot) => {
         adminGeneralChats = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+        // 2. Save fresh data to cache
+        localStorage.setItem(ADMIN_QUESTIONS_CACHE_KEY, JSON.stringify(adminGeneralChats));
+
         displayAdminChats(adminGeneralChats, false);
         if (snapshot.empty) {
             chatsList.innerHTML = "<p style='text-align:center; color: var(--gray); padding: 2rem;'>No questions found.</p>";
@@ -734,6 +807,11 @@ function displayAdminChats(chats, hasMore = false) {
     const stream = chatsList.querySelector('.conversation-stream');
 
     chats.forEach((chat) => {
+        // Handle both Firestore Timestamp objects and serialized JSON dates
+        const dateStr = chat.createdAt?.toDate 
+            ? chat.createdAt.toDate().toLocaleDateString() 
+            : (chat.createdAt?.seconds ? new Date(chat.createdAt.seconds * 1000).toLocaleDateString() : 'Just now');
+
         const item = document.createElement('div');
         item.className = `stream-item ${chat.status === 'unread' ? 'unread-chat' : ''}`;
         item.innerHTML = `
@@ -742,11 +820,12 @@ function displayAdminChats(chats, hasMore = false) {
                     <span class="stream-author">${chat.userName || "Anonymous"}</span>
                     ${chat.postTitle ? `<small style="color: var(--primary); font-weight: 600;">Re: ${chat.postTitle}</small>` : '<small style="color: var(--gray);">General Inquiry</small>'}
                 </div>
-                <span class="stream-date">${chat.createdAt?.toDate ? chat.createdAt.toDate().toLocaleDateString() : 'Just now'}</span>
+                <span class="stream-date">${dateStr}</span>
             </div>
             <div class="user-msg-slide slide-wrapper">
                 <div class="slide-reply-indicator"><i class="fas fa-reply"></i> REPLY</div>
                 <div class="slide-content">
+                    ${chat.replyTo ? `<div class="reply-preview-in-msg"><strong>${chat.replyTo.name}</strong>: ${chat.replyTo.text}</div>` : ''}
                     <p class="stream-text">${chat.message}</p>
                 </div>
             </div>
@@ -823,7 +902,12 @@ function initSlideToReply(wrapper, chatId) {
         if (isSliding && currentX >= threshold) {
             const area = document.getElementById(`reply-area-${chatId}`);
             if (area) {
+                const textContent = wrapper.querySelector('.stream-text')?.textContent || "Message";
+                const authorName = wrapper.closest('.stream-item')?.querySelector('.stream-author')?.textContent || "User";
+                
+                adminCommunityReplyingTo = { name: authorName, text: textContent };
                 area.style.display = 'block';
+                area.querySelector('textarea').placeholder = `Replying to ${authorName}...`;
                 area.querySelector('textarea')?.focus();
             }
         }
@@ -918,10 +1002,12 @@ window.sendReply = async (chatId) => {
         await updateDoc(chatRef, {
             reply: replyText, // The response to the user's question
             status: "read",
+            replyTo: adminCommunityReplyingTo,
             repliedAt: serverTimestamp()
         });
         adminAllChats = []; // Invalidate chats cache for statistics
         adminGeneralChats = []; // Invalidate general questions cache
+        adminCommunityReplyingTo = null;
     } catch (err) {
         console.error("Error replying:", err);
     }

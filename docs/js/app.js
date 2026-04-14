@@ -25,6 +25,7 @@ let activeTypingRef = null;
 let isInitialLiveLoad = true;
 const chatNotification = new Audio('https://assets.mixkit.co/active_storage/sfx/2358/2358-preview.mp3');
 let clientReplyingTo = null;
+let clientCommunityReplyingTo = null;
 let currentUserData = { likedPosts: [] };
 let currentPostIdForReply = null;
 let currentPostTitleForReply = null;
@@ -35,6 +36,8 @@ const POSTS_PER_PAGE = 6;
 let userChatListener = null;
 let allGeneralChats = []; // Cache for community chats
 let commentPagination = {}; // Tracks { lastDoc, hasMore } per postId
+const POSTS_CACHE_KEY = 'jacinta_blog_posts_cache';
+const COUNTS_CACHE_KEY = 'jacinta_blog_counts_cache';
 let generalChatPagination = { lastDoc: null, hasMore: true };
 let commentSortOrder = {}; // Tracks { postId: 'asc' | 'desc' }
 let commentCounts = {}; // Stores counts locally: { postId: count }
@@ -276,7 +279,10 @@ onAuthStateChanged(auth, async (user) => {
 
         currentUserData = { likedPosts: [] };
 
-        document.getElementById('modal-user-name')?.value = '';
+        const modalNameInput = document.getElementById('modal-user-name');
+       if (modalNameInput) {
+         modalNameInput.value = '';
+         }
         document.getElementById('live-chat-tab-btn')?.style.setProperty('display', 'none');
         document.getElementById('open-dm-btn')?.style.setProperty('display', 'none');
 
@@ -396,6 +402,22 @@ function setupLiveChat() {
         });
     }
 
+    // Inject community modal reply bar if not exists
+    const commModal = document.getElementById('community-chat-modal');
+    if (commModal && !document.getElementById('community-reply-preview-bar')) {
+        const commBar = document.createElement('div');
+        commBar.id = 'community-reply-preview-bar';
+        commBar.className = 'reply-preview-bar';
+        commBar.style.borderRadius = '8px';
+        commBar.innerHTML = `<span id="community-reply-preview-text"></span><i class="fas fa-times" id="cancel-community-reply"></i>`;
+        const textarea = document.getElementById('modal-user-question');
+        textarea.parentNode.insertBefore(commBar, textarea);
+        document.getElementById('cancel-community-reply').addEventListener('click', () => {
+            clientCommunityReplyingTo = null;
+            commBar.style.display = 'none';
+        });
+    }
+
     clientReplyingTo = null;
     document.getElementById('client-reply-preview-bar').style.display = 'none';
 
@@ -410,15 +432,15 @@ function setupLiveChat() {
     const q = query(collection(db, "direct_messages", currentUser.uid, "messages"), orderBy("timestamp", "asc"), firestoreLimitToLast(50));
     activeLiveChatRef = onSnapshot(q, (snapshot) => {
         msgContainer.innerHTML = "";
-        snapshot.forEach((doc) => {
-            const msg = doc.data();
+        snapshot.forEach((docSnap) => {
+            const msg = docSnap.data();
             const timeStr = msg.timestamp?.toDate ? msg.timestamp.toDate().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '';
             const wrapper = document.createElement('div');
             const isMe = msg.uid === currentUser.uid;
             wrapper.className = `slide-wrapper ${isMe ? 'me' : 'other'}`;
             wrapper.innerHTML = `
-                <div class="slide-reply-indicator"><i class="fas fa-reply"></i> REPLY</div>
-                <div class="slide-content">
+                <div class="slide-reply-indicator"><i class="fas fa-reply"></i> REPLY</div>            
+                    <div class="slide-content">
                     <div class="live-msg">
                         ${msg.replyTo ? `<div class="reply-preview-in-msg"><strong>${msg.replyTo.name}</strong>: ${msg.replyTo.text}</div>` : ''}
                         <small>${msg.name} • ${timeStr}</small>${msg.text}
@@ -555,11 +577,27 @@ function initClientLiveChatReply(wrapper, name, text) {
 async function loadPosts(append = false, forceRefresh = false) {
     if (isLoading) return;
 
-    // Caching check: use existing posts if available and not forcing a refresh
-    if (!append && !forceRefresh && allPosts.length > 0) {
-        renderPosts(allPosts);
-        setupPostStateListeners(allPosts);
-        return;
+    // 1. Initial Load: Check localStorage for an instant render
+    if (!append && allPosts.length === 0 && !forceRefresh) {
+        const cachedPosts = localStorage.getItem(POSTS_CACHE_KEY);
+        const cachedCounts = localStorage.getItem(COUNTS_CACHE_KEY);
+        
+        // Load cached counts first so renderPosts can use them immediately
+        if (cachedCounts) {
+            try {
+                const parsed = JSON.parse(cachedCounts);
+                likeCounts = parsed.likes || {};
+                commentCounts = parsed.comments || {};
+            } catch (e) { console.error("Counts cache corrupted:", e); }
+        }
+
+        if (cachedPosts) {
+            try {
+                allPosts = JSON.parse(cachedPosts);
+                renderPosts(allPosts);
+                setupPostStateListeners(allPosts);
+            } catch (e) { console.error("Cache corrupted:", e); }
+        }
     }
     
     if (append && !hasMore) return;
@@ -591,16 +629,20 @@ async function loadPosts(append = false, forceRefresh = false) {
         lastVisiblePost = querySnapshot.docs[querySnapshot.docs.length - 1];
         hasMore = querySnapshot.docs.length === POSTS_PER_PAGE;
         
-        const newPosts = querySnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+        const newPosts = querySnapshot.docs.map(docSnap => ({ id: docSnap.id, ...docSnap.data() }));
         allPosts = [...allPosts, ...newPosts];
 
-        if (!hasMore && sentinel) {
-            sentinel.innerHTML = "<p style='color: var(--gray);'>You've reached the end of our stories.</p>";
-        } else if (sentinel) {
-            sentinel.innerHTML = "";
+        // 2. Update localStorage with the latest fresh batch and current counts
+        if (!append) {
+            localStorage.setItem(POSTS_CACHE_KEY, JSON.stringify(newPosts));
+            localStorage.setItem(COUNTS_CACHE_KEY, JSON.stringify({ likes: likeCounts, comments: commentCounts }));
         }
 
-        renderPosts(allPosts);
+        renderPosts(newPosts, append);
+
+        if (sentinel) {
+            sentinel.innerHTML = hasMore ? "" : "<p style='color: var(--gray);'>You've reached the end of our stories.</p>";
+        }
         setupPostStateListeners(allPosts);
 
         if (!append && !hasScrolledToHash) {
@@ -658,7 +700,7 @@ function setupPostStateListeners(posts) {
 }
 
 const observer = new IntersectionObserver((entries) => {
-    if (entries[0].isIntersecting && hasMore && !isLoading) {
+    if (entries[0].isIntersecting && hasMore && !isLoading && currentUser) {
         loadPosts(true);
     }
 }, { threshold: 0.1 });
@@ -667,16 +709,19 @@ if (sentinel) {
     observer.observe(sentinel);
 }
 
-function renderPosts(posts) {
+function renderPosts(posts, append = false) {
     if (!blogFeed) return;
-    blogFeed.innerHTML = "";
+    if (!append) blogFeed.innerHTML = "";
     
     // If guest, only show the first 3 posts to encourage sign-up
     const displayPosts = currentUser ? posts : posts.slice(0, 3);
 
-    if (displayPosts.length === 0 && posts.length === 0) {
+    if (!append && displayPosts.length === 0) {
         blogFeed.innerHTML = "<p style='text-align: center; grid-column: 1 / -1;'>No stories found matching your search.</p>";
+        return;
     }
+
+    const fragment = document.createDocumentFragment();
     displayPosts.forEach((post) => {
         const hasLiked = currentUserData.likedPosts?.includes(post.id);
 
@@ -688,12 +733,18 @@ function renderPosts(posts) {
         const postElement = document.createElement("div");
         postElement.id = `post-${post.id}`;
         postElement.className = "post-card fade-in";
+        
+        // Handle both Firestore Timestamp objects and serialized JSON dates
+        const dateStr = post.createdAt?.toDate 
+            ? post.createdAt.toDate().toLocaleDateString() 
+            : (post.createdAt?.seconds ? new Date(post.createdAt.seconds * 1000).toLocaleDateString() : '');
+
         postElement.innerHTML = `
-            <img src="${post.image || 'https://via.placeholder.com/400'}" alt="Blog Image">
+            <img src="${post.image || 'https://via.placeholder.com/400'}" alt="Blog Image" loading="lazy">
             <div class="post-content">
                 <h3>${post.title}</h3>
                 <small>
-                    ${post.createdAt?.toDate ? post.createdAt.toDate().toLocaleDateString() : ''}
+                    ${dateStr}
                     ${currentUser && allPosts.indexOf(post) >= 3 ? '<span class="member-badge">Member</span>' : ''}
                 </small>
                 <div class="post-description collapsed" id="desc-${post.id}">${getSnippet(post.content)}</div>
@@ -716,11 +767,12 @@ function renderPosts(posts) {
                 </div>
             </div>
         `;
-        blogFeed.appendChild(postElement);
+        fragment.appendChild(postElement);
     });
+    blogFeed.appendChild(fragment);
 
     // Add "Unlock More" card for guests if there are more posts available
-    if (!currentUser && posts.length > 3) {
+    if (!currentUser && !append && allPosts.length > 3) {
         const ctaCard = document.createElement("div");
         ctaCard.className = "post-card cta-card fade-in";
         ctaCard.innerHTML = `
@@ -987,11 +1039,14 @@ document.getElementById('community-chat-form')?.addEventListener('submit', async
             message: message,
             userId: currentUser ? currentUser.uid : "guest",
             postId: null, // General chat identifier
+            replyTo: clientCommunityReplyingTo,
             createdAt: Date.now(),
             status: "unread"
         });
 
         alert("Thank you! Your message has been sent to the community.");
+        document.getElementById('community-reply-preview-bar').style.display = 'none';
+        clientCommunityReplyingTo = null;
         if (document.getElementById('community-chat-modal')) document.getElementById('community-chat-modal').style.display = 'none';
         document.getElementById('community-chat-form').reset();
         
@@ -1084,6 +1139,7 @@ function displayChats(chats, hasMore = false) {
                 <div class="user-msg-slide slide-wrapper">
                     <div class="slide-reply-indicator"><i class="fas fa-reply"></i> REPLY</div>
                     <div class="slide-content">
+                        ${chat.replyTo ? `<div class="reply-preview-in-msg"><strong>${chat.replyTo.name}</strong>: ${chat.replyTo.text}</div>` : ''}
                         <p class="stream-text">${chat.message}</p>
                     </div>
                 </div>
@@ -1178,9 +1234,15 @@ function initSlideToReply(wrapper, userName, message) {
 function triggerReply(name, text) {
     const modal = document.getElementById('community-chat-modal');
     const textarea = document.getElementById('modal-user-question');
-    if (modal && textarea) {
+    const bar = document.getElementById('community-reply-preview-bar');
+    const previewText = document.getElementById('community-reply-preview-text');
+
+    if (modal && textarea && bar) {
+        clientCommunityReplyingTo = { name, text };
+        previewText.textContent = `Replying to ${name}: "${text.substring(0, 40)}..."`;
+        bar.style.display = 'flex';
         modal.style.display = 'flex';
-        textarea.value = `Replying to ${name}: "${text.substring(0, 40)}..." \n\n`;
+        textarea.value = '';
         textarea.focus();
     }
 }
@@ -1201,7 +1263,10 @@ function openViewRepliesModal(postId, postTitle) {
 
 document.getElementById('close-view-replies-modal')?.addEventListener('click', () => {
     document.getElementById('view-replies-modal').style.display = 'none';
-    if (currentPostRepliesListener) currentPostRepliesListener();
+    if (currentPostRepliesListener) {
+        currentPostRepliesListener();
+        currentPostRepliesListener = null;
+    }
 });
 
 document.getElementById('modal-sort-replies')?.addEventListener('change', (e) => {
@@ -1217,6 +1282,7 @@ function loadRepliesForPost(postId) {
     const repliesList = document.getElementById('view-modal-replies-list');
     if (!repliesList) return;
 
+    // Clear existing listener if we are reloading or switching posts
     if (currentPostRepliesListener) currentPostRepliesListener();
 
     const sortOrder = commentSortOrder[postId] || 'desc';

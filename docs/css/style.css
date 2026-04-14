@@ -1202,7 +1202,7 @@ button:active {
     margin-bottom: 8px;
     border-left: 3px solid var(--primary);
 }
-.live-msg.me .reply-preview-in-msg {
+.slide-wrapper.me .reply-preview-in-msg {
     background: rgba(255,255,255,0.1);
     color: white;
     border-left-color: rgba(255,255,255,0.5);

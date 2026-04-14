@@ -4,7 +4,6 @@ import { getAuth, sendPasswordResetEmail } from "https://www.gstatic.com/firebas
 const firebaseConfig = {
   apiKey: "AIzaSyBIGqZLYcDg3CR5VamDwBhtOOfl2Y0NYeI",
   authDomain: "timotech-films.firebaseapp.com",
-  databaseURL: "https://timotech-films-default-rtdb.firebaseio.com",
   projectId: "timotech-films",
   storageBucket: "timotech-films.firebasestorage.app",
   messagingSenderId: "563809562931",
