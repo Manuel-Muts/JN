@@ -375,6 +375,8 @@ function setupPresence(user, fullName) {
                 if (usersUl) usersUl.appendChild(li);
             });
             if (countBadge) countBadge.textContent = `${onlineCount} Online`;
+        }, (error) => {
+            console.warn("Presence listener failed (check security rules):", error);
         });
     }
 }
@@ -388,6 +390,12 @@ function setupLiveChat() {
     const chatInput = document.getElementById('live-chat-input');
     const typingIndicator = document.getElementById('typing-indicator');
     if (!msgContainer || !chatForm || !currentUser) return;
+
+    // Helper to auto-resize the chat textarea
+    const autoResize = () => {
+        chatInput.style.height = 'auto';
+        chatInput.style.height = (chatInput.scrollHeight) + 'px';
+    };
 
     // Inject reply preview bar if not exists
     if (!document.getElementById('client-reply-preview-bar')) {
@@ -428,12 +436,21 @@ function setupLiveChat() {
         activeTypingRef = null;
     }
 
+    // Handle individual message deletion
+    msgContainer.onclick = async (e) => {
+        const deleteBtn = e.target.closest('.delete-msg-btn');
+        if (deleteBtn && confirm("Delete this message?")) {
+            const msgId = deleteBtn.dataset.id;
+            await deleteDoc(doc(db, "direct_messages", currentUser.uid, "messages", msgId));
+        }
+    };
+
     // 1. Listen for messages in Firestore
     const q = query(collection(db, "direct_messages", currentUser.uid, "messages"), orderBy("timestamp", "asc"), firestoreLimitToLast(50));
     activeLiveChatRef = onSnapshot(q, (snapshot) => {
         msgContainer.innerHTML = "";
         snapshot.forEach((docSnap) => {
-            const msg = docSnap.data();
+            const msg = { id: docSnap.id, ...docSnap.data() };
             const timeStr = msg.timestamp?.toDate ? msg.timestamp.toDate().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '';
             const wrapper = document.createElement('div');
             const isMe = msg.uid === currentUser.uid;
@@ -442,6 +459,7 @@ function setupLiveChat() {
                 <div class="slide-reply-indicator"><i class="fas fa-reply"></i> REPLY</div>            
                     <div class="slide-content">
                     <div class="live-msg">
+                        ${isMe ? `<i class="fas fa-trash delete-msg-btn" data-id="${msg.id}" title="Delete Message"></i>` : ''}
                         ${msg.replyTo ? `<div class="reply-preview-in-msg"><strong>${msg.replyTo.name}</strong>: ${msg.replyTo.text}</div>` : ''}
                         <small>${msg.name} • ${timeStr}</small>${msg.text}
                     </div>
@@ -453,6 +471,8 @@ function setupLiveChat() {
         setTimeout(() => {
             msgContainer.scrollTo({ top: msgContainer.scrollHeight, behavior: 'smooth' });
         }, 50);
+    }, (error) => {
+        console.error("Live Chat listener failed:", error);
     });
 
     // Typing Indicator Logic in Firestore
@@ -460,6 +480,7 @@ function setupLiveChat() {
     const typingDocRef = doc(db, "typing_indicators", currentUser.uid);
 
     chatInput.addEventListener('input', () => {
+        autoResize();
         setDoc(typingDocRef, {
             name: currentUserData.firstName || currentUser.email.split('@')[0],
             isTyping: true,
@@ -468,6 +489,14 @@ function setupLiveChat() {
 
         clearTimeout(typingTimeout);
         typingTimeout = setTimeout(() => updateDoc(typingDocRef, { isTyping: false }), 2500);
+    });
+
+    // Allow Ctrl+Enter to send, while Enter stays as a newline
+    chatInput.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) {
+            e.preventDefault();
+            chatForm.dispatchEvent(new Event('submit', { cancelable: true, bubbles: true }));
+        }
     });
 
     const typingQuery = query(collection(db, "typing_indicators"), where("isTyping", "==", true));
@@ -480,6 +509,8 @@ function setupLiveChat() {
             }
         });
         typingIndicator.textContent = typingUsers.length > 0 ? `${typingUsers.join(', ')} typing...` : "";
+    }, (error) => {
+        console.warn("Typing indicator listener failed:", error);
     });
 
     // Sending message
@@ -512,6 +543,7 @@ function setupLiveChat() {
             clientReplyingTo = null;
             document.getElementById('client-reply-preview-bar').style.display = 'none';
             chatInput.value = "";
+            chatInput.style.height = 'auto'; // Reset height after send
             updateDoc(typingDocRef, { isTyping: false });
         } catch (err) {
             console.error("Failed to send message:", err);
@@ -668,6 +700,8 @@ function setupPostStateListeners(posts) {
                 commentCounts[postId] = snap.size;
                 const span = document.querySelector(`.reply-count-${postId}`);
                 if (span) span.textContent = snap.size;
+            }, (error) => {
+                console.error(`Comment count listener failed for post ${postId}:`, error);
             });
         } else {
             const span = document.querySelector(`.reply-count-${postId}`);
@@ -691,6 +725,8 @@ function setupPostStateListeners(posts) {
                         }
                     }
                 }
+            }, (error) => {
+                console.error(`Like count listener failed for post ${postId}:`, error);
             });
         } else {
             const span = document.querySelector(`.like-count-${postId}`);
@@ -1006,6 +1042,8 @@ function setupUserChatListener() {
             `;
             myChatsDiv.appendChild(bubble);
         });
+    }, (error) => {
+        console.error("User conversations listener failed:", error);
     });
 }
 
@@ -1316,6 +1354,8 @@ function loadRepliesForPost(postId) {
             `;
             repliesList.appendChild(bubble);
         });
+    }, (error) => {
+        console.error("Post replies listener failed:", error);
     });
 }
 

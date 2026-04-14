@@ -476,6 +476,12 @@ function setupAdminLiveChat(adminUser, targetUserId = null, targetUserName = nul
 
     if (!msgContainer || !chatForm) return;
 
+    // Helper to auto-resize the chat textarea
+    const autoResize = () => {
+        chatInput.style.height = 'auto';
+        chatInput.style.height = (chatInput.scrollHeight) + 'px';
+    };
+
     // Inject reply preview bar if not exists
     if (!document.getElementById('admin-reply-preview-bar')) {
         const bar = document.createElement('div');
@@ -488,6 +494,16 @@ function setupAdminLiveChat(adminUser, targetUserId = null, targetUserName = nul
             bar.style.display = 'none';
         });
     }
+
+    chatInput.addEventListener('input', autoResize);
+
+    // Allow Ctrl+Enter to send, while Enter stays as a newline
+    chatInput.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) {
+            e.preventDefault();
+            chatForm.dispatchEvent(new Event('submit', { cancelable: true, bubbles: true }));
+        }
+    });
 
     adminReplyingTo = null;
     document.getElementById('admin-reply-preview-bar').style.display = 'none';
@@ -525,9 +541,18 @@ function setupAdminLiveChat(adminUser, targetUserId = null, targetUserName = nul
         } catch (e) { console.error("Chat cache error:", e); }
     }
 
+    // Handle individual message deletion
+    msgContainer.onclick = async (e) => {
+        const deleteBtn = e.target.closest('.delete-msg-btn');
+        if (deleteBtn && confirm("Delete this message?")) {
+            const msgId = deleteBtn.dataset.id;
+            await deleteDoc(doc(db, "direct_messages", targetUserId, "messages", msgId));
+        }
+    };
+
     const q = query(collection(db, "direct_messages", targetUserId, "messages"), orderBy("timestamp", "asc"), firestoreLimitToLast(50));
     activeAdminLiveChatRef = onSnapshot(q, (snapshot) => {
-        const msgs = snapshot.docs.map(docSnap => docSnap.data());
+        const msgs = snapshot.docs.map(docSnap => ({ id: docSnap.id, ...docSnap.data() }));
         localStorage.setItem(cacheKey, JSON.stringify(msgs));
         
         renderMessagesUI(msgs, msgContainer, adminUser);
@@ -574,6 +599,7 @@ function setupAdminLiveChat(adminUser, targetUserId = null, targetUserName = nul
             adminReplyingTo = null;
             document.getElementById('admin-reply-preview-bar').style.display = 'none';
             chatInput.value = "";
+            chatInput.style.height = 'auto'; // Reset height after send
         } catch (err) {
             console.error("Admin send error:", err);
             alert("Error sending message. Ensure your Admin UID is correctly set in the Database Rules.");
@@ -596,6 +622,7 @@ function renderMessagesUI(msgs, container, adminUser) {
             <div class="slide-reply-indicator"><i class="fas fa-reply"></i> REPLY</div>
             <div class="slide-content">
                 <div class="live-msg">
+                    <i class="fas fa-trash delete-msg-btn" data-id="${msg.id}" title="Delete Message"></i>
                     ${msg.replyTo ? `<div class="reply-preview-in-msg"><strong>${msg.replyTo.name}</strong>: ${msg.replyTo.text}</div>` : ''}
                     <small>${msg.name} • ${timeStr}</small>${msg.text}
                 </div>

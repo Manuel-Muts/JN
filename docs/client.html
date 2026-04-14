@@ -51,9 +51,12 @@
                 <div id="live-messages-container" style="height: 450px; overflow-y: auto; display: flex; flex-direction: column; gap: 10px; padding: 1rem; background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; margin-bottom: 1rem;">
                     <!-- Real-time messages will appear here -->
                 </div>
-                <form id="live-chat-form" style="display: flex; gap: 10px;">
-                    <input type="text" id="live-chat-input" placeholder="Say something to the community..." style="margin: 0; flex: 1;">
-                    <button type="submit">Send Message</button>
+                <form id="live-chat-form" style="display: flex; gap: 10px; align-items: flex-end;">
+                   <textarea id="live-chat-input" placeholder="Type a message..." rows="1"></textarea>
+                    <button type="submit" class="send-btn">
+                        <i class="fas fa-paper-plane"></i>
+                        <span class="btn-text">Send Message</span>
+                    </button>
                 </form>
             </div>
         </div>

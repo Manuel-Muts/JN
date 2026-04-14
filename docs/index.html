@@ -118,9 +118,12 @@
                     <!-- Real-time messages will appear here -->
                 </div>
                 <div id="typing-indicator" style="font-size: 0.8rem; color: var(--gray); height: 1.2rem; margin-bottom: 0.5rem; font-style: italic;"></div>
-                <form id="live-chat-form" style="display: flex; gap: 10px;">
-                    <input type="text" id="live-chat-input" placeholder="Say something to the community..." style="margin: 0; flex: 1;">
-                    <button type="submit">Send Message</button>
+                <form id="live-chat-form" style="display: flex; gap: 10px; align-items: flex-end;">
+                    <textarea id="live-chat-input" placeholder="Say something to the community..." rows="1" style="margin: 0; flex: 1;"></textarea>
+                    <button type="submit" class="send-btn">
+                        <i class="fas fa-paper-plane"></i>
+                        <span class="btn-text">Send Message</span>
+                    </button>
                 </form>
             </div>
         </div>
