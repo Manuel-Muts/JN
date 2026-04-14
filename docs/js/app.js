@@ -1,7 +1,7 @@
 // --- Firebase Imports & Initialization ---
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js";
-import { getAuth, createUserWithEmailAndPassword, signInWithEmailAndPassword, onAuthStateChanged, signOut } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-auth.js";
-import { getFirestore, collection, addDoc, query, orderBy, getDocs, serverTimestamp, where, updateDoc, doc, increment, limit, startAfter, onSnapshot, getDoc, setDoc, arrayUnion, limitToLast as firestoreLimitToLast } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
+import { getAuth, createUserWithEmailAndPassword, signInWithEmailAndPassword, onAuthStateChanged, signOut } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-auth.js"; // Corrected import for deleteDoc
+import { getFirestore, collection, addDoc, query, orderBy, getDocs, serverTimestamp, where, updateDoc, doc, increment, limit, startAfter, onSnapshot, getDoc, setDoc, arrayUnion, limitToLast as firestoreLimitToLast, deleteDoc } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
 import { SharedComponents } from "./components.js";
 
 const firebaseConfig = {
