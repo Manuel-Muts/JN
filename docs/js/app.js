@@ -3,15 +3,7 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebas
 import { getAuth, createUserWithEmailAndPassword, signInWithEmailAndPassword, onAuthStateChanged, signOut } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-auth.js"; // Corrected import for deleteDoc
 import { getFirestore, collection, addDoc, query, orderBy, getDocs, serverTimestamp, where, updateDoc, doc, increment, limit, startAfter, onSnapshot, getDoc, setDoc, arrayUnion, limitToLast as firestoreLimitToLast, deleteDoc } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
 import { SharedComponents } from "./components.js";
-
-const firebaseConfig = {
-  apiKey: "AIzaSyBIGqZLYcDg3CR5VamDwBhtOOfl2Y0NYeI",
-  authDomain: "timotech-films.firebaseapp.com",
-  projectId: "timotech-films",
-  storageBucket: "timotech-films.firebasestorage.app",
-  messagingSenderId: "563809562931",
-  appId: "1:563809562931:web:750ff7e819f2d57e9dce46"
-};
+import { firebaseConfig, getSnippet, initSlideGesture, POST_PREVIEW_LIMIT, setupTabs as sharedSetupTabs, showToast } from "./utils.js";
 
 const app = initializeApp(firebaseConfig);
 const auth = getAuth(app);
@@ -38,6 +30,7 @@ let allGeneralChats = []; // Cache for community chats
 let commentPagination = {}; // Tracks { lastDoc, hasMore } per postId
 const POSTS_CACHE_KEY = 'jacinta_blog_posts_cache';
 const COUNTS_CACHE_KEY = 'jacinta_blog_counts_cache';
+const GENERAL_CHATS_CACHE_KEY = 'jacinta_blog_general_chats_cache';
 let generalChatPagination = { lastDoc: null, hasMore: true };
 let commentSortOrder = {}; // Tracks { postId: 'asc' | 'desc' }
 let commentCounts = {}; // Stores counts locally: { postId: count }
@@ -47,9 +40,6 @@ let likeCountListeners = {}; // Stores unsubscribe functions for likes
 const COMMENTS_PER_PAGE = 10;
 
 let hasScrolledToHash = false;
-// Helper for character limit truncation
-const POST_PREVIEW_LIMIT = 150;
-
 /**
  * Triggers a floating heart animation when a post is liked.
  */
@@ -64,14 +54,6 @@ function triggerHeartAnimation(btn) {
     heart.style.setProperty('--y-dir', '-100px');
     document.body.appendChild(heart);
     setTimeout(() => heart.remove(), 1000);
-}
-
-function getSnippet(content, limit = POST_PREVIEW_LIMIT) {
-    const tempDiv = document.createElement("div");
-    tempDiv.innerHTML = content || "";
-    const plainText = tempDiv.textContent || tempDiv.innerText || "";
-    if (plainText.length <= limit) return content;
-    return plainText.substring(0, limit) + "...";
 }
 
 function handleHashScroll() {
@@ -176,88 +158,100 @@ function updateAuthModalUI() {
 
 authForm?.addEventListener('submit', async (e) => {
     e.preventDefault();
-    authErrorMessage.textContent = ''; // Clear previous errors
-    authSubmitBtn.disabled = true;
-    authSubmitBtn.textContent = isSigningUp ? 'Signing Up...' : 'Signing In...';
+    authErrorMessage.textContent = '';
+    const email = authEmailInput.value.trim();
+    const password = authPasswordInput.value.trim();
+    const firstName = authFirstNameInput.value.trim();
+    const lastName = authLastNameInput.value.trim();
 
-    const email = authEmailInput.value;
-    const password = authPasswordInput.value;
-    const firstName = authFirstNameInput.value;
-    const lastName = authLastNameInput.value;
+    authSubmitBtn.classList.add('is-loading');
+    authSubmitBtn.disabled = true;
 
     try {
         if (isSigningUp) {
-            if (!firstName || !lastName) {
-                throw new Error("Please enter your first and last name.");
-            }
             const userCredential = await createUserWithEmailAndPassword(auth, email, password);
             await setDoc(doc(db, "users", userCredential.user.uid), {
-                firstName: firstName,
-                lastName: lastName,
-                email: email,
+                firstName,
+                lastName,
+                email,
+                role: 'user',
                 likedPosts: [],
                 createdAt: serverTimestamp()
             });
-            alert("Registration successful! You are now logged in.");
+            showToast("Registration successful! Welcome to the community.", "success");
         } else {
             await signInWithEmailAndPassword(auth, email, password);
-            alert("Login successful!");
+            showToast("Login successful! Redirecting...", "success");
         }
+        userAuthModal.style.display = 'none';
         authForm.reset();
-        // Redirect to client dashboard on success
-        window.location.href = 'client.html';
     } catch (error) {
         console.error("Authentication error:", error);
         authErrorMessage.textContent = error.message;
     } finally {
+        authSubmitBtn.classList.remove('is-loading');
         authSubmitBtn.disabled = false;
-        authSubmitBtn.textContent = isSigningUp ? 'Sign Up' : 'Sign In';
     }
 });
 
 logoutBtn?.addEventListener('click', () => {
-    logoutConfirmModal.style.display = 'flex';
+    if (logoutConfirmModal) logoutConfirmModal.style.display = 'flex';
 });
 
 cancelLogoutBtn?.addEventListener('click', () => {
     logoutConfirmModal.style.display = 'none';
 });
 
-confirmLogoutBtn?.addEventListener('click', () => {
+confirmLogoutBtn?.addEventListener('click', async () => {
     logoutConfirmModal.style.display = 'none';
     if (currentUser) {
-        // Mark user offline in Firestore before logging out
-        updateDoc(doc(db, "users", currentUser.uid), { isOnline: false, lastSeen: serverTimestamp() })
-            .catch(() => {}) // Ignore errors if connection is already lost
-            .finally(() => {
-                signOut(auth).then(() => { window.location.href = 'index.html'; });
+        try {
+            await updateDoc(doc(db, "users", currentUser.uid), {
+                isOnline: false,
+                lastSeen: serverTimestamp()
             });
-    } else {
-        signOut(auth).then(() => { window.location.href = 'index.html'; });
+        } catch (e) {}
+        signOut(auth).then(() => {
+            window.location.href = 'index.html';
+        });
     }
 });
 
 onAuthStateChanged(auth, async (user) => {
-    currentUser = user;
-
-    const isClientPage = window.location.pathname.includes('client.html');
-    const isIndexPage = window.location.pathname.includes('index.html') || window.location.pathname.endsWith('/');
+    const path = window.location.pathname.toLowerCase();
+    const isIndexPage = path === '/' || path.endsWith('/index.html') || path.endsWith('/');
+    const isAdminPage = path.endsWith('admin.html');
+    const isClientPage = path.endsWith('client.html');
 
     if (user) {
+        // User is logged in
         if (userAuthModalBtn) userAuthModalBtn.style.display = 'none';
         if (profileNav) profileNav.style.display = 'flex';
 
         const userSnap = await getDoc(doc(db, "users", user.uid));
-        const data = userSnap.data() || {};
-        currentUserData = { ...data, likedPosts: data.likedPosts || [] };
-
-        if (displayNameSpan) {
-            displayNameSpan.textContent =
-                currentUserData.firstName || user.email.split('@')[0];
+        if (userSnap.exists()) {
+            currentUserData = { id: user.uid, ...userSnap.data() };
+            
+            // Enforce redirection based on role
+            if (currentUserData.role?.toLowerCase() === 'admin') {
+                if (!isAdminPage) {
+                    window.location.replace('admin.html');
+                    return;
+                }
+            } else {
+                if (!isClientPage) {
+                    window.location.replace('client.html');
+                    return;
+                }
+            }
+            
+            if (displayNameSpan) {
+                displayNameSpan.textContent = currentUserData.firstName || user.email.split('@')[0];
+            }
         }
 
+        currentUser = user;
         const fullName = `${currentUserData.firstName || ''} ${currentUserData.lastName || ''}`.trim();
-
         const modalCommNameInput = document.getElementById('modal-user-name');
         if (modalCommNameInput) modalCommNameInput.value = fullName;
 
@@ -272,34 +266,28 @@ onAuthStateChanged(auth, async (user) => {
         }
 
         setupLiveChat();
-
     } else {
         if (userAuthModalBtn) userAuthModalBtn.style.display = 'block';
         if (profileNav) profileNav.style.display = 'none';
-
+        
         currentUserData = { likedPosts: [] };
-
+        currentUser = null;
+        
         const modalNameInput = document.getElementById('modal-user-name');
-       if (modalNameInput) {
-         modalNameInput.value = '';
-         }
+        if (modalNameInput) modalNameInput.value = '';
+        
         document.getElementById('live-chat-tab-btn')?.style.setProperty('display', 'none');
         document.getElementById('open-dm-btn')?.style.setProperty('display', 'none');
-
-        if (isClientPage) {
-            window.location.href = 'index.html';
+        
+        // If a logged-out user is on a protected page (client.html or admin.html), redirect to index.html
+        if (isClientPage || isAdminPage) {
+            window.location.replace('index.html');
             return;
         }
-
-        document.getElementById('live-chat-section')?.style.setProperty('display', 'none');
-
-        const storiesTabBtn = document.querySelector('[data-tab="stories-tab"]');
-        if (storiesTabBtn) storiesTabBtn.click();
 
         if (userChatListener) userChatListener();
         userChatListener = null;
 
-        // ✅ CLEAN unsubscribe handling
         if (activeLiveChatRef) {
             activeLiveChatRef();
             activeLiveChatRef = null;
@@ -313,8 +301,34 @@ onAuthStateChanged(auth, async (user) => {
         presenceInitialized = false;
     }
 
-    renderPosts(allPosts);
+    // Only render posts if we are actually on a page that displays posts
+    if (isIndexPage || isClientPage) {
+        renderPosts(allPosts);
+    }
 });
+
+/**
+ * Injects the reply preview bar into the Community Connection modal.
+ * This runs for both guests and logged-in users.
+ */
+function initCommunityReplyBar() {
+    const commModal = document.getElementById('community-chat-modal');
+    if (commModal && !document.getElementById('community-reply-preview-bar')) {
+        const commBar = document.createElement('div');
+        commBar.id = 'community-reply-preview-bar';
+        commBar.className = 'reply-preview-bar';
+        commBar.style.borderRadius = '8px';
+        commBar.innerHTML = `<span id="community-reply-preview-text"></span><i class="fas fa-times" id="cancel-community-reply"></i>`;
+        const textarea = document.getElementById('modal-user-question');
+        if (textarea) {
+            textarea.parentNode.insertBefore(commBar, textarea);
+            document.getElementById('cancel-community-reply').addEventListener('click', () => {
+                clientCommunityReplyingTo = null;
+                commBar.style.display = 'none';
+            });
+        }
+    }
+}
 
 /**
  * Tab Navigation Logic for Client Side
@@ -322,26 +336,16 @@ onAuthStateChanged(auth, async (user) => {
 let tabsInitialized = false;
 function setupTabs() {
     if (tabsInitialized) return;
-    const tabs = document.querySelectorAll('.tab-btn');
-    const contents = document.querySelectorAll('.tab-content');
 
-    tabs.forEach(tab => {
-        tab.addEventListener('click', () => {
-            const target = tab.dataset.tab;
-            tabs.forEach(t => t.classList.remove('active'));
-            contents.forEach(c => c.classList.remove('active'));
-            tab.classList.add('active');
-            document.getElementById(target)?.classList.add('active');
-
-            // Clear notification when user opens the chat tab
-            if (target === 'live-chat-section' && currentUser) {
-                updateDoc(doc(db, "chat_summaries", currentUser.uid), { unreadByUser: false }).catch(() => {});
-            }
-            // Load data for specific tabs when opened
-            if (target === 'community-tab') {
-                loadChats();
-            }
-        });
+    sharedSetupTabs((target) => {
+        // Clear notification when user opens the chat tab
+        if (target === 'live-chat-section' && currentUser) {
+            updateDoc(doc(db, "chat_summaries", currentUser.uid), { unreadByUser: false }).catch(() => {});
+        }
+        // Load data for specific tabs when opened
+        if (target === 'community-tab') {
+            loadChats();
+        }
     });
     tabsInitialized = true;
 }
@@ -410,22 +414,6 @@ function setupLiveChat() {
         });
     }
 
-    // Inject community modal reply bar if not exists
-    const commModal = document.getElementById('community-chat-modal');
-    if (commModal && !document.getElementById('community-reply-preview-bar')) {
-        const commBar = document.createElement('div');
-        commBar.id = 'community-reply-preview-bar';
-        commBar.className = 'reply-preview-bar';
-        commBar.style.borderRadius = '8px';
-        commBar.innerHTML = `<span id="community-reply-preview-text"></span><i class="fas fa-times" id="cancel-community-reply"></i>`;
-        const textarea = document.getElementById('modal-user-question');
-        textarea.parentNode.insertBefore(commBar, textarea);
-        document.getElementById('cancel-community-reply').addEventListener('click', () => {
-            clientCommunityReplyingTo = null;
-            commBar.style.display = 'none';
-        });
-    }
-
     clientReplyingTo = null;
     document.getElementById('client-reply-preview-bar').style.display = 'none';
 
@@ -466,7 +454,16 @@ function setupLiveChat() {
                 </div>
             `;
             msgContainer.appendChild(wrapper);
-            initClientLiveChatReply(wrapper, msg.name, msg.text);
+            initSlideGesture(wrapper, () => {
+                const bar = document.getElementById('client-reply-preview-bar');
+                const previewText = document.getElementById('client-reply-preview-text');
+                clientReplyingTo = { name: msg.name, text: msg.text };
+                if (bar && previewText) {
+                    previewText.textContent = `Replying to ${msg.name}: "${msg.text.substring(0, 40)}..."`;
+                    bar.style.display = 'flex';
+                    document.getElementById('live-chat-input')?.focus();
+                }
+            });
         });
         setTimeout(() => {
             msgContainer.scrollTo({ top: msgContainer.scrollHeight, behavior: 'smooth' });
@@ -550,59 +547,6 @@ function setupLiveChat() {
             alert("Message could not be sent. Please check your connection or permissions.");
         }
     };
-}
-
-/**
- * Initializes the "Slide to Reply" gesture logic for Client Live Chat
- */
-function initClientLiveChatReply(wrapper, name, text) {
-    const content = wrapper.querySelector('.slide-content');
-    const indicator = wrapper.querySelector('.slide-reply-indicator');
-    let startX = 0, currentX = 0, isSliding = false;
-    const threshold = 60;
-
-    const handleStart = (e) => {
-        startX = e.type.includes('touch') ? e.touches[0].clientX : e.clientX;
-        isSliding = false;
-        content.style.transition = 'none';
-    };
-
-    const handleMove = (e) => {
-        const x = e.type.includes('touch') ? e.touches[0].clientX : e.clientX;
-        const dx = x - startX;
-        if (Math.abs(dx) > 10) isSliding = true;
-
-        if (isSliding && dx > 0) {
-            if (e.cancelable) e.preventDefault();
-            currentX = Math.min(dx, 80);
-            content.style.transform = `translateX(${currentX}px)`;
-            indicator.style.opacity = currentX / threshold;
-        }
-    };
-
-    const handleEnd = () => {
-        content.style.transition = 'transform 0.3s cubic-bezier(0.18, 0.89, 0.32, 1.28)';
-        if (isSliding && currentX >= threshold) {
-            const bar = document.getElementById('client-reply-preview-bar');
-            const previewText = document.getElementById('client-reply-preview-text');
-            clientReplyingTo = { name, text };
-            if (bar && previewText) {
-                previewText.textContent = `Replying to ${name}: "${text.substring(0, 40)}..."`;
-                bar.style.display = 'flex';
-                document.getElementById('live-chat-input')?.focus();
-            }
-        }
-        content.style.transform = 'translateX(0px)';
-        indicator.style.opacity = 0;
-        startX = 0; currentX = 0; isSliding = false;
-    };
-    
-    wrapper.addEventListener('touchstart', handleStart, { passive: true });
-    wrapper.addEventListener('touchmove', handleMove, { passive: false });
-    wrapper.addEventListener('touchend', handleEnd);
-    wrapper.addEventListener('mousedown', handleStart);
-    window.addEventListener('mousemove', (e) => { if(startX > 0) handleMove(e); });
-    window.addEventListener('mouseup', () => { if(startX > 0) handleEnd(); });
 }
 
 // --- 1. Fetch and Display Blog Posts ---
@@ -790,10 +734,10 @@ function renderPosts(posts, append = false) {
                         ❤️ <span class="like-count like-count-${post.id}">${likeCounts[post.id] !== undefined ? likeCounts[post.id] : (post.likes || 0)}</span>
                     </button>
                     
-                    <button class="open-reply-modal-btn" data-post-id="${post.id}" data-post-title="${post.title}"><i class="fas fa-comment-sms"></i> Reply</button>
-                    <button class="toggle-replies-btn" data-post-id="${post.id}"><i class="fas fa-comments"></i> View Replies (<span class="reply-count-${post.id}">${commentCounts[post.id] || 0}</span>)</button>
+                    <button class="open-reply-modal-btn btn btn-primary" data-post-id="${post.id}" data-post-title="${post.title}"><i class="fas fa-comment-sms"></i> Reply</button>
+                    <button class="toggle-replies-btn btn btn-secondary" data-post-id="${post.id}"><i class="fas fa-comments"></i> View Replies (<span class="reply-count-${post.id}">${commentCounts[post.id] || 0}</span>)</button>
                     <div class="share-container">
-                        <button class="share-btn" data-post-id="${post.id}"><i class="fas fa-share-alt"></i> Share</button>
+                        <button class="share-btn btn btn-secondary" data-post-id="${post.id}"><i class="fas fa-share-alt"></i> Share</button>
                         <div class="share-menu" id="share-menu-${post.id}">
                             <a href="#" class="share-item whatsapp" data-id="${post.id}" title="Share on WhatsApp"><i class="fab fa-whatsapp"></i></a>
                             <a href="#" class="share-item twitter" data-id="${post.id}" title="Share on Twitter"><i class="fab fa-twitter"></i></a>
@@ -816,7 +760,7 @@ function renderPosts(posts, append = false) {
                 <i class="fas fa-lock"></i>
                 <h3>Unlock More Stories</h3>
                 <p>Sign in to your account to access our full library of youth insights and mental wellness conversations.</p>
-                <button onclick="document.getElementById('user-auth-modal-btn').click()" style="width: 100%; margin-top: 1rem;">Join for Free</button>
+                <button onclick="document.getElementById('user-auth-modal-btn').click()" class="btn btn-primary btn-glow btn-shine" style="width: 100%; margin-top: 1rem;">Join for Free</button>
             </div>
         `;
         blogFeed.appendChild(ctaCard);
@@ -936,7 +880,7 @@ document.addEventListener('click', async (e) => {
             window.open(`https://twitter.com/intent/tweet?url=${shareUrl}&text=${text}`, '_blank');
         } else if (shareItem.classList.contains('copy')) {
             navigator.clipboard.writeText(shareUrl).then(() => {
-                alert("Post link copied to clipboard!");
+                showToast("Link copied to clipboard!", "success");
             }).catch(err => console.error("Could not copy text: ", err));
         }
         shareItem.parentElement.classList.remove('active');
@@ -1078,12 +1022,13 @@ document.getElementById('community-chat-form')?.addEventListener('submit', async
             userId: currentUser ? currentUser.uid : "guest",
             postId: null, // General chat identifier
             replyTo: clientCommunityReplyingTo,
-            createdAt: Date.now(),
+            createdAt: serverTimestamp(),
             status: "unread"
         });
 
-        alert("Thank you! Your message has been sent to the community.");
-        document.getElementById('community-reply-preview-bar').style.display = 'none';
+        showToast("Your message has been sent to the community!", "success");
+        const commReplyBar = document.getElementById('community-reply-preview-bar');
+        if (commReplyBar) commReplyBar.style.display = 'none';
         clientCommunityReplyingTo = null;
         if (document.getElementById('community-chat-modal')) document.getElementById('community-chat-modal').style.display = 'none';
         document.getElementById('community-chat-form').reset();
@@ -1092,7 +1037,7 @@ document.getElementById('community-chat-form')?.addEventListener('submit', async
         loadChats(false, true);
     } catch (err) {
         console.error("Error sending community message:", err);
-        alert("Failed to send message: " + err.message);
+        showToast("Failed to send message: " + err.message, "error");
     } finally {
         submitBtn.disabled = false;
         submitBtn.innerHTML = originalBtnText;
@@ -1114,10 +1059,17 @@ async function loadChats(append = false, forceRefresh = false) {
     const chatDiv = document.getElementById('public-chats');
     if (!chatDiv) return;
 
-    if (!append && !forceRefresh && allGeneralChats.length > 0) {
-        displayChats(allGeneralChats, generalChatPagination.hasMore);
-        return;
+    // 1. Load from cache for instant UI
+    if (!append && allGeneralChats.length === 0 && !forceRefresh) {
+        const cached = localStorage.getItem(GENERAL_CHATS_CACHE_KEY);
+        if (cached) {
+            try {
+                allGeneralChats = JSON.parse(cached);
+                displayChats(allGeneralChats, generalChatPagination.hasMore);
+            } catch (e) { console.error("General chat cache error:", e); }
+        }
     }
+    if (!append && !forceRefresh && allGeneralChats.length > 0) return;
 
     if (!append) {
         generalChatPagination = { lastDoc: null, hasMore: true };
@@ -1150,6 +1102,11 @@ async function loadChats(append = false, forceRefresh = false) {
         const newChats = querySnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
         allGeneralChats = [...allGeneralChats, ...newChats];
 
+        // 2. Save fresh data to cache
+        if (!append) {
+            localStorage.setItem(GENERAL_CHATS_CACHE_KEY, JSON.stringify(newChats));
+        }
+
         displayChats(allGeneralChats, generalChatPagination.hasMore);
     } catch (err) {
         console.error("Error loading chats:", err);
@@ -1165,6 +1122,10 @@ function displayChats(chats, hasMore = false) {
 
     let repliedCount = 0;
     chats.forEach((chat) => {
+        const dateStr = chat.createdAt?.toDate 
+            ? chat.createdAt.toDate().toLocaleString([], { dateStyle: 'short', timeStyle: 'short' }) 
+            : (typeof chat.createdAt === 'number' ? new Date(chat.createdAt).toLocaleString([], { dateStyle: 'short', timeStyle: 'short' }) : 'Just now');
+
         if(chat.reply) { // Ensure there's an author reply to display in this section
             repliedCount++;
             const item = document.createElement('div');
@@ -1172,7 +1133,7 @@ function displayChats(chats, hasMore = false) {
             item.innerHTML = `
                 <div class="stream-header">
                     <span class="stream-author">${chat.userName || "Anonymous"}</span>
-                    <span class="stream-date">${chat.createdAt?.toDate ? chat.createdAt.toDate().toLocaleDateString() : 'Just now'}</span>
+                    <span class="stream-date">${dateStr}</span>
                 </div>
                 <div class="user-msg-slide slide-wrapper">
                     <div class="slide-reply-indicator"><i class="fas fa-reply"></i> REPLY</div>
@@ -1192,8 +1153,10 @@ function displayChats(chats, hasMore = false) {
                 </div>
             `;
             stream.appendChild(item);
-            initSlideToReply(item.querySelector('.user-msg-slide'), chat.userName || "Anonymous", chat.message);
-            initSlideToReply(item.querySelector('.author-reply-slide'), "Author", chat.reply);
+            initSlideGesture(item.querySelector('.user-msg-slide'), () => 
+                triggerReply(chat.userName || "Anonymous", chat.message));
+            initSlideGesture(item.querySelector('.author-reply-slide'), () => 
+                triggerReply("Author", chat.reply));
         }
     });
 
@@ -1203,70 +1166,10 @@ function displayChats(chats, hasMore = false) {
 
     if (hasMore) {
         const btn = document.createElement('button');
-        btn.className = 'load-more-chats secondary-btn';
+        btn.className = 'load-more-chats btn btn-secondary';
         btn.textContent = 'Load More Conversations';
         chatDiv.appendChild(btn);
     }
-}
-
-/**
- * Initializes the "Slide to Reply" gesture logic
- */
-function initSlideToReply(wrapper, userName, message) {
-    const content = wrapper.querySelector('.slide-content');
-    const indicator = wrapper.querySelector('.slide-reply-indicator');
-    let startX = 0, startY = 0, currentX = 0;
-    let isSliding = false;
-    let isScrolling = false;
-    const threshold = 60;
-
-    const handleStart = (e) => {
-        startX = e.type.includes('touch') ? e.touches[0].clientX : e.clientX;
-        startY = e.type.includes('touch') ? e.touches[0].clientY : e.clientY;
-        isSliding = false;
-        isScrolling = false;
-        content.style.transition = 'none';
-    };
-
-    const handleMove = (e) => {
-        const x = e.type.includes('touch') ? e.touches[0].clientX : e.clientX;
-        const y = e.type.includes('touch') ? e.touches[0].clientY : e.clientY;
-        const dx = x - startX;
-        const dy = y - startY;
-
-        // Detect if user is trying to scroll or slide
-        if (!isSliding && !isScrolling) {
-            if (Math.abs(dx) > 10 && Math.abs(dx) > Math.abs(dy)) {
-                isSliding = true;
-            } else if (Math.abs(dy) > 10) {
-                isScrolling = true;
-            }
-        }
-
-        if (isSliding && dx > 0) {
-            if (e.cancelable) e.preventDefault();
-            currentX = Math.min(dx, 80);
-            content.style.transform = `translateX(${currentX}px)`;
-            indicator.style.opacity = currentX / threshold;
-        }
-    };
-
-    const handleEnd = () => {
-        content.style.transition = 'transform 0.3s cubic-bezier(0.18, 0.89, 0.32, 1.28)';
-        if (isSliding && currentX >= threshold) {
-            triggerReply(userName, message);
-        }
-        content.style.transform = 'translateX(0px)';
-        indicator.style.opacity = 0;
-        startX = 0; currentX = 0; isSliding = false;
-    };
-    
-    wrapper.addEventListener('touchstart', handleStart, { passive: true });
-    wrapper.addEventListener('touchmove', handleMove, { passive: false });
-    wrapper.addEventListener('touchend', handleEnd);
-    wrapper.addEventListener('mousedown', handleStart);
-    window.addEventListener('mousemove', (e) => { if(startX > 0) handleMove(e); });
-    window.addEventListener('mouseup', () => { if(startX > 0) { handleEnd(); } });
 }
 
 function triggerReply(name, text) {
@@ -1385,7 +1288,7 @@ replyForm?.addEventListener('submit', async (e) => {
     const message = replyMessageInput.value.trim();
 
     if (!message) {
-        alert("Please enter your reply.");
+        showToast("Please enter a reply before submitting.", "warning");
         submitBtn.disabled = false; // Re-enable if validation fails
         return;
     }
@@ -1402,10 +1305,10 @@ replyForm?.addEventListener('submit', async (e) => {
             userId: currentUser.uid,
             postId: currentPostIdForReply,
             postTitle: currentPostTitleForReply,
-            createdAt: Date.now(), 
+            createdAt: serverTimestamp(), 
             status: "unread" // Consistent status for admin filtering
         });
-        alert("Your reply has been sent!");
+        showToast("Your reply has been posted!", "success");
         replyModal.style.display = 'none';
         replyForm.reset();
         // Refresh replies for the specific post
@@ -1420,7 +1323,7 @@ replyForm?.addEventListener('submit', async (e) => {
 
     } catch (err) {
         console.error("Error sending reply:", err);
-        alert("Failed to send reply: " + err.message);
+        showToast("Failed to send reply. Please try again.", "error");
     } finally {
         submitBtn.disabled = false;
         submitBtn.innerHTML = originalBtnText;
@@ -1428,5 +1331,6 @@ replyForm?.addEventListener('submit', async (e) => {
 });
 
 setupTabs();
+initCommunityReplyBar();
 loadPosts();
 loadChats();

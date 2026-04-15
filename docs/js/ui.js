@@ -132,3 +132,13 @@ backToTopBtn?.addEventListener("click", () => {
         behavior: "smooth"
     });
 });
+
+// --- Login Background Parallax ---
+window.addEventListener("scroll", () => {
+    const loginSection = document.getElementById('login-section');
+    if (loginSection && window.getComputedStyle(loginSection).display !== 'none') {
+        const scrolled = window.pageYOffset;
+        // Adjust the 0.15 value to make the effect more or less subtle
+        loginSection.style.setProperty('--parallax-y', (scrolled * 0.15) + 'px');
+    }
+});

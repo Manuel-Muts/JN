@@ -2,53 +2,39 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebas
 import { getAuth, signInWithEmailAndPassword, onAuthStateChanged, signOut } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-auth.js";
 import { getFirestore, collection, addDoc, query, orderBy, getDocs, updateDoc, doc, onSnapshot, deleteDoc, getDoc, serverTimestamp, where, getCountFromServer, limit, startAfter, limitToLast as firestoreLimitToLast, setDoc } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
 import { SharedComponents } from "./components.js";
+import { firebaseConfig, getSnippet, initSlideGesture, POST_PREVIEW_LIMIT, setupTabs as sharedSetupTabs, showToast } from "./utils.js";
 
-const firebaseConfig = {
-  apiKey: "AIzaSyBIGqZLYcDg3CR5VamDwBhtOOfl2Y0NYeI",
-  authDomain: "timotech-films.firebaseapp.com",
-  projectId: "timotech-films",
-  storageBucket: "timotech-films.firebasestorage.app",
-  messagingSenderId: "563809562931",
-  appId: "1:563809562931:web:750ff7e819f2d57e9dce46"
-};
 const app = initializeApp(firebaseConfig);
 const auth = getAuth(app);
 const db = getFirestore(app);
-
-// Helper for character limit truncation
-const POST_PREVIEW_LIMIT = 150;
-const ADMIN_STATS_CACHE_KEY = 'admin_stats_cache';
-const ADMIN_TOP_POSTS_CACHE_KEY = 'admin_top_posts_cache';
-const ADMIN_THREADS_CACHE_KEY = 'admin_chat_threads_cache';
-const ADMIN_QUESTIONS_CACHE_KEY = 'admin_questions_cache';
-const ADMIN_CHAT_PREFIX = 'admin_chat_msg_';
-
-function getSnippet(content, limit = POST_PREVIEW_LIMIT) {
-    const tempDiv = document.createElement("div");
-    tempDiv.innerHTML = content || "";
-    const plainText = tempDiv.textContent || tempDiv.innerText || "";
-    if (plainText.length <= limit) return content;
-    return plainText.substring(0, limit) + "...";
-}
+const ADMIN_STATS_CACHE_KEY = "admin_stats_cache";
+const ADMIN_TOP_POSTS_CACHE_KEY = "admin_top_posts_cache";
+const ADMIN_QUESTIONS_CACHE_KEY = "admin_questions_cache";
+const ADMIN_THREADS_CACHE_KEY = "admin_threads_cache";
+const ADMIN_CHAT_PREFIX = "admin_chat_";
 
 /**
  * Invalidates admin data caches to ensure fresh statistics and lists.
  */
 function invalidateAdminCaches() {
     adminAllPosts = [];
-    adminAllChats = [];
     adminGeneralChats = [];
     adminStatsCache = null;
     adminTopLikedCache = null;
     localStorage.removeItem(ADMIN_STATS_CACHE_KEY);
     localStorage.removeItem(ADMIN_TOP_POSTS_CACHE_KEY);
+    localStorage.removeItem(ADMIN_QUESTIONS_CACHE_KEY);
+    localStorage.removeItem(ADMIN_THREADS_CACHE_KEY);
 }
 
 // Initialize Quill editor
-const quill = new Quill('#editor', {
-    theme: 'snow',
-    placeholder: 'Write your blog post here...',
-});
+let quill = null;
+if (typeof Quill !== 'undefined') {
+    quill = new Quill('#editor', {
+        theme: 'snow',
+        placeholder: 'Write your blog post here...',
+    });
+}
 
 
 let uploadedImageUrl = "";
@@ -57,7 +43,6 @@ let postIdToDelete = null; // To keep track of the post pending deletion
 let activeReplyListener = null; // Unsubscribe function for the modal listener
 let globalChatsListener = null; // Live listener for the general questions tab
 let adminAllPosts = []; // Local storage for search filtering
-let adminAllChats = []; // Cache for statistics
 let adminGeneralChats = []; // Cache for general questions
 let adminCommentCounts = {}; // Stores counts locally: { postId: count }
 let adminStatsCache = null; // Cache for calculated summary stats
@@ -77,32 +62,15 @@ let adminChatPagination = { lastDoc: null, hasMore: true };
 // --- Tab Navigation Logic ---
 function setupTabs() {
     if (tabsInitialized) return;
-    
-    const tabs = document.querySelectorAll('.tab-btn');
-    const contents = document.querySelectorAll('.tab-content');
 
-    tabs.forEach(tab => {
-        tab.addEventListener('click', () => {
-            const target = tab.dataset.tab;
-
-            // Reset classes
-            tabs.forEach(t => t.classList.remove('active'));
-            contents.forEach(c => c.classList.remove('active'));
-
-            // Set active
-            tab.classList.add('active');
-            document.getElementById(target)?.classList.add('active');
-            if (target === 'stats-tab') {
-                loadStatistics();
-                loadTopLikedPosts();
-            }
-            if (target === 'questions-tab') {
-                loadAdminChats();
-            }
-            if (target === 'live-chat-tab') {
-                // Live chat is handled by setupAdminLiveChat listener
-            }
-        });
+    sharedSetupTabs((target) => {
+        if (target === 'stats-tab') {
+            loadStatistics();
+            loadTopLikedPosts();
+        }
+        if (target === 'questions-tab') {
+            loadAdminChats();
+        }
     });
 
     tabsInitialized = true;
@@ -112,67 +80,43 @@ async function loadStatistics() {
     const likesDisplay = document.getElementById('total-likes-count');
     const mostLikedPostTitleDisplay = document.getElementById('most-liked-post-title');
     const commentsDisplay = document.getElementById('total-comments-count');
-    const mostCommentedPostTitleDisplay = document.getElementById('most-commented-post-title');
     
     try {
-        // 1. Check memory and localStorage for instant UI
-        if (!adminStatsCache) {
-            const cached = localStorage.getItem(ADMIN_STATS_CACHE_KEY);
-            if (cached) {
-                try {
-                    adminStatsCache = JSON.parse(cached);
-                } catch (e) { console.error("Stats cache error:", e); }
-            }
+        // 1. Load from cache for instant UI feedback
+        const cached = localStorage.getItem(ADMIN_STATS_CACHE_KEY);
+        if (cached && !adminStatsCache) {
+            try {
+                adminStatsCache = JSON.parse(cached);
+                renderStatsUI(adminStatsCache);
+            } catch (e) { console.error("Stats cache error:", e); }
         }
 
-        if (adminStatsCache) renderStatsUI(adminStatsCache);
+        // 2. Fetch all posts to calculate accurate total likes and find most liked
+        const postsSnapshot = await getDocs(collection(db, "posts"));
+        const allPosts = postsSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
 
-        // If no cache at all, reset displays to initial loading state
-        if (!adminStatsCache) {
-            if (likesDisplay) likesDisplay.textContent = '0';
-            if (mostLikedPostTitleDisplay) mostLikedPostTitleDisplay.textContent = 'N/A';
-            if (commentsDisplay) commentsDisplay.textContent = '0';
-            if (mostCommentedPostTitleDisplay) mostCommentedPostTitleDisplay.textContent = 'N/A';
-        }
+        let totalLikes = 0;
+        let topLikedPost = { title: 'N/A', likes: 0 };
 
-        // 1. Get the single most liked post via query
-        const mostLikedQuery = query(collection(db, "posts"), orderBy("likes", "desc"), limit(1));
-        const mostLikedSnap = await getDocs(mostLikedQuery);
-
-        // 2. Handle Most Commented (Requires fetching chats as there is no commentCount field on posts yet)
-        if (adminAllChats.length === 0) {
-            const chatsSnapshot = await getDocs(collection(db, "chats"));
-            adminAllChats = chatsSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-        }
-
-        const commentCountsByPost = {}; // { postId: count }
-        adminAllChats.forEach(chat => {
-            const postId = chat.postId;
-            if (postId) {
-                commentCountsByPost[postId] = (commentCountsByPost[postId] || 0) + 1;
+        allPosts.forEach(post => {
+            const likes = post.likes || 0;
+            totalLikes += likes;
+            if (likes > topLikedPost.likes) {
+                topLikedPost = { title: post.title, likes: likes };
             }
         });
 
-        let mostCommentedPost = { id: null, comments: -1 };
-        for (const postId in commentCountsByPost) {
-            if (commentCountsByPost[postId] > mostCommentedPost.comments) {
-                mostCommentedPost = { id: postId, comments: commentCountsByPost[postId] };
-            }
-        }
+        // 3. Fetch all chats for total comments
+        const chatsSnapshot = await getDocs(collection(db, "chats"));
+        const allChats = chatsSnapshot.docs.map(doc => doc.data());
+
+        const totalComments = allChats.length;
 
         const statsToCache = {
-            mostLikedTitle: !mostLikedSnap.empty ? mostLikedSnap.docs[0].data().title : 'N/A',
-            mostLikedCount: !mostLikedSnap.empty ? (mostLikedSnap.docs[0].data().likes || 0) : 0,
-            mostCommentedId: mostCommentedPost.id,
-            mostCommentedCount: mostCommentedPost.comments > -1 ? mostCommentedPost.comments : 0,
-            mostCommentedTitle: 'N/A'
+            mostLikedTitle: topLikedPost.title,
+            mostLikedCount: totalLikes,
+            mostCommentedCount: totalComments // Shows the total number of interactions
         };
-
-        if (statsToCache.mostCommentedId) {
-            const postSnap = await getDoc(doc(db, "posts", statsToCache.mostCommentedId));
-            statsToCache.mostCommentedTitle = postSnap.exists() ? postSnap.data().title : 'Deleted Post';
-        }
-
         adminStatsCache = statsToCache;
         localStorage.setItem(ADMIN_STATS_CACHE_KEY, JSON.stringify(adminStatsCache));
         renderStatsUI(adminStatsCache);
@@ -185,12 +129,10 @@ function renderStatsUI(stats) {
     const likesDisplay = document.getElementById('total-likes-count');
     const mostLikedPostTitleDisplay = document.getElementById('most-liked-post-title');
     const commentsDisplay = document.getElementById('total-comments-count');
-    const mostCommentedPostTitleDisplay = document.getElementById('most-commented-post-title');
 
     if (likesDisplay) likesDisplay.textContent = stats.mostLikedCount;
     if (mostLikedPostTitleDisplay) mostLikedPostTitleDisplay.textContent = stats.mostLikedTitle;
     if (commentsDisplay) commentsDisplay.textContent = stats.mostCommentedCount;
-    if (mostCommentedPostTitleDisplay) mostCommentedPostTitleDisplay.textContent = stats.mostCommentedTitle;
 }
 
 async function loadTopLikedPosts() {
@@ -251,27 +193,27 @@ document.getElementById('login-btn').addEventListener('click', async () => {
     const pass = document.getElementById('password').value.trim();
 
     if (!email || !pass) {
-        alert("Please enter both email and password.");
+        showToast("Please enter both email and password.", "warning");
         return;
     }
 
     // Set loading state
+    loginBtn.classList.add('is-loading');
     loginBtn.disabled = true;
-    loginBtn.innerText = "Logging in...";
 
     try {
         const userCredential = await signInWithEmailAndPassword(auth, email, pass);
         // Explicitly check role here to provide feedback for this specific login attempt
         const userDoc = await getDoc(doc(db, "users", userCredential.user.uid));
-        if (!userDoc.exists() || userDoc.data().role !== 'admin') {
-            alert("Access Denied: You do not have administrator privileges.");
+        if (!userDoc.exists() || userDoc.data().role?.toLowerCase() !== 'admin') {
+            showToast("Access Denied: Admin privileges required.", "error");
             await signOut(auth);
         }
     } catch (err) {
-        alert("Login failed: " + err.message);
+        showToast("Login failed: " + err.message, "error");
         // Reset button state only on failure (success hides the section)
+        loginBtn.classList.remove('is-loading');
         loginBtn.disabled = false;
-        loginBtn.innerText = "Login";
     }
 });
 
@@ -295,7 +237,9 @@ cancelLogoutBtn?.addEventListener('click', () => {
 
 confirmLogoutBtn?.addEventListener('click', () => {
     logoutConfirmModal.style.display = 'none';
-    signOut(auth);
+    signOut(auth).then(() => {
+        window.location.href = 'index.html';
+    });
 });
 
 // Admin Reply Modal Close Logic
@@ -349,8 +293,8 @@ onAuthStateChanged(auth, async (user) => {
     if (user) {
         try {
             const userDoc = await getDoc(doc(db, "users", user.uid));
-            const userData = userDoc.data();
-            if (userDoc.exists() && userData.role === 'admin') {
+            const userData = userDoc?.data();
+            if (userDoc.exists() && userData?.role?.toLowerCase() === 'admin') {
                 loginSec.style.display = "none";
                 adminPanel.style.display = "block";
                 
@@ -367,11 +311,12 @@ onAuthStateChanged(auth, async (user) => {
                 }
                 setupAdminLiveChat(user); 
             } else {
-                loginSec.style.display = "block";
-                adminPanel.style.display = "none";
+                // If authenticated but not an admin, redirect to home
+                window.location.replace('index.html');
             }
         } catch (err) {
             console.error("Error verifying admin status:", err);
+            window.location.replace('index.html');
         }
     } else {
         loginSec.style.display = "block";
@@ -381,12 +326,11 @@ onAuthStateChanged(auth, async (user) => {
         // Reset login button state and clear credentials
         const loginBtn = document.getElementById('login-btn');
         loginBtn.disabled = false;
-        loginBtn.innerText = "Login to Dashboard";
+        loginBtn.innerText = "Login";
         // Clear comment count listeners
         Object.values(adminCommentCountListeners).forEach(unsubscribe => unsubscribe());
         adminCommentCountListeners = {};
         adminCommentCounts = {};
-        adminAllChats = []; // Clear cache on logout
         adminGeneralChats = []; // Clear cache on logout
         adminStatsCache = null;
         adminTopLikedCache = null;
@@ -630,80 +574,46 @@ function renderMessagesUI(msgs, container, adminUser) {
         `;
         container.appendChild(wrapper);
         // Re-initialize gesture listeners for newly rendered elements
-        initAdminLiveChatReply(wrapper, msg.name, msg.text);
-    });
-}
-
-/**
- * Initializes the "Slide to Reply" gesture logic for Admin Live Chat
- */
-function initAdminLiveChatReply(wrapper, name, text) {
-    const content = wrapper.querySelector('.slide-content');
-    const indicator = wrapper.querySelector('.slide-reply-indicator');
-    let startX = 0, currentX = 0, isSliding = false;
-    const threshold = 60;
-
-    const handleStart = (e) => {
-        startX = e.type.includes('touch') ? e.touches[0].clientX : e.clientX;
-        isSliding = false;
-        content.style.transition = 'none';
-    };
-
-    const handleMove = (e) => {
-        const x = e.type.includes('touch') ? e.touches[0].clientX : e.clientX;
-        const dx = x - startX;
-        if (Math.abs(dx) > 10) isSliding = true;
-
-        if (isSliding && dx > 0) {
-            if (e.cancelable) e.preventDefault();
-            currentX = Math.min(dx, 80);
-            content.style.transform = `translateX(${currentX}px)`;
-            indicator.style.opacity = currentX / threshold;
-        }
-    };
-
-    const handleEnd = () => {
-        content.style.transition = 'transform 0.3s cubic-bezier(0.18, 0.89, 0.32, 1.28)';
-        if (isSliding && currentX >= threshold) {
+        initSlideGesture(wrapper, () => {
             const bar = document.getElementById('admin-reply-preview-bar');
             const previewText = document.getElementById('admin-reply-preview-text');
-            adminReplyingTo = { name, text };
+            adminReplyingTo = { name: msg.name, text: msg.text };
             if (bar && previewText) {
-                previewText.textContent = `Replying to ${name}: "${text.substring(0, 40)}..."`;
+                previewText.textContent = `Replying to ${msg.name}: "${msg.text.substring(0, 40)}..."`;
                 bar.style.display = 'flex';
                 document.getElementById('admin-live-chat-input')?.focus();
             }
-        }
-        content.style.transform = 'translateX(0px)';
-        indicator.style.opacity = 0;
-        startX = 0; currentX = 0; isSliding = false;
-    };
-    
-    wrapper.addEventListener('touchstart', handleStart, { passive: true });
-    wrapper.addEventListener('touchmove', handleMove, { passive: false });
-    wrapper.addEventListener('touchend', handleEnd);
-    wrapper.addEventListener('mousedown', handleStart);
-    window.addEventListener('mousemove', (e) => { if(startX > 0) handleMove(e); });
-    window.addEventListener('mouseup', () => { if(startX > 0) handleEnd(); });
+        });
+    });
 }
 
 // --- 2. Cloudinary Upload ---
-const myWidget = cloudinary.createUploadWidget({
-    cloudName: 'djbkqazzt', 
-    uploadPreset: 'jacinta'
-}, (error, result) => { 
-    if (!error && result && result.event === "success") { 
-        uploadedImageUrl = result.info.secure_url;
-        const preview = document.getElementById('preview-img');
-        preview.src = uploadedImageUrl;
-        preview.style.display = "block";
-    }
-});
-document.getElementById("upload-widget").addEventListener("click", () => myWidget.open(), false);
+if (typeof cloudinary !== "undefined") {
+    const myWidget = cloudinary.createUploadWidget({
+        cloudName: 'djbkqazzt', 
+        uploadPreset: 'jacinta',
+        secure: true
+    }, (error, result) => { 
+        if (error) {
+            console.error("Cloudinary Widget Error:", error);
+        }
+        if (!error && result && result.event === "success") { 
+            uploadedImageUrl = result.info.secure_url;
+            const preview = document.getElementById('preview-img');
+            preview.src = uploadedImageUrl;
+            preview.style.display = "block";
+        }
+    });
+    document.getElementById("upload-widget").addEventListener("click", () => myWidget.open(), false);
+}
 
 // --- 3. Publishing Posts ---
 document.getElementById('submit-post').addEventListener('click', async () => {
     const title = document.getElementById('post-title').value;
+    if (!quill) {
+        showToast("The text editor failed to load. Please refresh.", "error");
+        return;
+    }
     const isContentEmpty = quill.getText().trim().length === 0;
 
     if (!title || isContentEmpty) {
@@ -729,6 +639,12 @@ document.getElementById('submit-post').addEventListener('click', async () => {
 async function executePublish() {
     const submitBtn = document.getElementById('submit-post');
     const title = document.getElementById('post-title').value;
+
+    if (!quill) {
+        showToast("The text editor failed to load.", "error");
+        return;
+    }
+
     const content = quill.root.innerHTML;
 
     // Set loading state
@@ -770,7 +686,7 @@ async function executePublish() {
         window.scrollTo({ top: 0, behavior: 'smooth' });
 
     } catch (err) {
-        alert("Failed to publish: " + err.message);
+        showToast("Failed to publish: " + err.message, "error");
         submitBtn.disabled = false;
         submitBtn.innerText = "Publish Post";
     }
@@ -836,8 +752,8 @@ function displayAdminChats(chats, hasMore = false) {
     chats.forEach((chat) => {
         // Handle both Firestore Timestamp objects and serialized JSON dates
         const dateStr = chat.createdAt?.toDate 
-            ? chat.createdAt.toDate().toLocaleDateString() 
-            : (chat.createdAt?.seconds ? new Date(chat.createdAt.seconds * 1000).toLocaleDateString() : 'Just now');
+            ? chat.createdAt.toDate().toLocaleString([], { dateStyle: 'short', timeStyle: 'short' }) 
+            : (chat.createdAt?.seconds ? new Date(chat.createdAt.seconds * 1000).toLocaleString([], { dateStyle: 'short', timeStyle: 'short' }) : 'Just now');
 
         const item = document.createElement('div');
         item.className = `stream-item ${chat.status === 'unread' ? 'unread-chat' : ''}`;
@@ -869,86 +785,34 @@ function displayAdminChats(chats, hasMore = false) {
             ` : ''}
             <div class="reply-input-area" id="reply-area-${chat.id}" style="${chat.reply ? 'display:none;' : 'display:block;'} margin-top: 10px;">
                 <textarea id="reply-input-${chat.id}" placeholder="Type your reply..." style="margin-bottom: 5px;">${chat.reply || ''}</textarea>
-                <button onclick="window.sendReply('${chat.id}')" style="padding: 0.5rem 1rem; font-size: 0.8rem;">${chat.reply ? 'Update Reply' : 'Send Reply'}</button>
+                <button onclick="window.sendReply('${chat.id}')" class="btn btn-primary btn-shine" style="padding: 0.5rem 1rem; font-size: 0.8rem;">${chat.reply ? 'Update Reply' : 'Send Reply'}</button>
             </div>
         `;
         stream.appendChild(item);
-        initSlideToReply(item.querySelector('.user-msg-slide'), chat.id);
-        if (chat.reply) initSlideToReply(item.querySelector('.author-reply-slide'), chat.id);
+        const setupAdminSlide = (wrapper) => {
+            initSlideGesture(wrapper, () => {
+                const area = document.getElementById(`reply-area-${chat.id}`);
+                const textContent = wrapper.querySelector('.stream-text')?.textContent || wrapper.querySelector('.stream-author-reply')?.textContent || "Message";
+                const authorName = wrapper.closest('.stream-item')?.querySelector('.stream-author')?.textContent || "User";
+                adminCommunityReplyingTo = { name: authorName, text: textContent };
+                if (area) {
+                    area.style.display = 'block';
+                    area.querySelector('textarea').placeholder = `Replying to ${authorName}...`;
+                    area.querySelector('textarea')?.focus();
+                }
+            });
+        };
+        setupAdminSlide(item.querySelector('.user-msg-slide'));
+        if (chat.reply) setupAdminSlide(item.querySelector('.author-reply-slide'));
     });
 
     if (hasMore) {
         const btn = document.createElement('button');
-        btn.className = 'load-more-admin-chats secondary-btn';
+        btn.className = 'load-more-admin-chats btn btn-secondary';
         btn.style.marginTop = '1rem';
         btn.textContent = 'Load More Questions';
         chatsList.appendChild(btn);
     }
-}
-
-/**
- * Initializes the "Slide to Reply" gesture logic for Admin
- */
-function initSlideToReply(wrapper, chatId) {
-    const content = wrapper.querySelector('.slide-content');
-    const indicator = wrapper.querySelector('.slide-reply-indicator');
-    let startX = 0, startY = 0, currentX = 0;
-    let isSliding = false;
-    let isScrolling = false;
-    const threshold = 60;
-
-    const handleStart = (e) => {
-        startX = e.type.includes('touch') ? e.touches[0].clientX : e.clientX;
-        startY = e.type.includes('touch') ? e.touches[0].clientY : e.clientY;
-        isSliding = false;
-        isScrolling = false;
-        content.style.transition = 'none';
-    };
-
-    const handleMove = (e) => {
-        const x = e.type.includes('touch') ? e.touches[0].clientX : e.clientX;
-        const y = e.type.includes('touch') ? e.touches[0].clientY : e.clientY;
-        const dx = x - startX;
-        const dy = y - startY;
-
-        if (!isSliding && !isScrolling) {
-            if (Math.abs(dx) > 10 && Math.abs(dx) > Math.abs(dy)) isSliding = true;
-            else if (Math.abs(dy) > 10) isScrolling = true;
-        }
-
-        if (isSliding && dx > 0) {
-            if (e.cancelable) e.preventDefault();
-            currentX = Math.min(dx, 80);
-            content.style.transform = `translateX(${currentX}px)`;
-            indicator.style.opacity = currentX / threshold;
-        }
-    };
-
-    const handleEnd = () => {
-        content.style.transition = 'transform 0.3s cubic-bezier(0.18, 0.89, 0.32, 1.28)';
-        if (isSliding && currentX >= threshold) {
-            const area = document.getElementById(`reply-area-${chatId}`);
-            if (area) {
-                const textContent = wrapper.querySelector('.stream-text')?.textContent || "Message";
-                const authorName = wrapper.closest('.stream-item')?.querySelector('.stream-author')?.textContent || "User";
-                
-                adminCommunityReplyingTo = { name: authorName, text: textContent };
-                area.style.display = 'block';
-                area.querySelector('textarea').placeholder = `Replying to ${authorName}...`;
-                area.querySelector('textarea')?.focus();
-            }
-        }
-        content.style.transform = 'translateX(0px)';
-        indicator.style.opacity = 0;
-        startX = 0; currentX = 0; isSliding = false;
-    };
-    
-    wrapper.addEventListener('touchstart', handleStart, { passive: true });
-    wrapper.addEventListener('touchmove', handleMove, { passive: false });
-    wrapper.addEventListener('touchend', handleEnd);
-    wrapper.addEventListener('mousedown', handleStart);
-    window.addEventListener('mousemove', (e) => { if(startX > 0) handleMove(e); });
-    window.addEventListener('mouseup', () => { if(startX > 0) { handleEnd(); } });
 }
 
 document.addEventListener('click', (e) => {
@@ -987,7 +851,7 @@ function openAdminReplyModal(postId, postTitle) {
                 <p><strong>${chat.userName || "Anonymous"}:</strong> ${chat.message}</p>
                 ${chat.reply ? `<p style="color: var(--primary)"><strong>My Reply:</strong> ${chat.reply}</p>` : `
                     <textarea id="reply-input-${id}" placeholder="Type your reply..."></textarea>
-                    <button onclick="window.sendReply('${id}')">Send Reply</button>
+                    <button onclick="window.sendReply('${id}')" class="btn btn-primary">Send Reply</button>
                 `}
             `;
             listDiv.appendChild(bubble);
@@ -1032,7 +896,6 @@ window.sendReply = async (chatId) => {
             replyTo: adminCommunityReplyingTo,
             repliedAt: serverTimestamp()
         });
-        adminAllChats = []; // Invalidate chats cache for statistics
         adminGeneralChats = []; // Invalidate general questions cache
         adminCommunityReplyingTo = null;
     } catch (err) {
@@ -1088,17 +951,17 @@ function displayAdminPosts(posts) {
                 ${post.updatedAt ? `<small>Updated: ${post.updatedAt.toDate().toLocaleDateString()}</small>` : ''}
                 <div class="post-description collapsed" id="admin-desc-${postId}">${getSnippet(post.content)}</div>
                 ${isLong ? `<span class="read-more-toggle" data-id="${postId}" data-limit="${POST_PREVIEW_LIMIT}">Read More</span>` : ''}
-                <button class="view-replies-btn" data-id="${postId}" data-title="${post.title}" style="background-color: var(--success); margin-right: 0.5rem;">View Replies (<span class="admin-reply-count-${postId}">${adminCommentCounts[postId] || 0}</span>)</button>
+                <button class="view-replies-btn btn btn-success" data-id="${postId}" data-title="${post.title}" style="margin-right: 0.5rem;">View Replies (<span class="admin-reply-count-${postId}">${adminCommentCounts[postId] || 0}</span>)</button>
                 <div class="share-container" style="display: inline-block; margin-right: 0.5rem;">
-                    <button class="share-post-btn" data-id="${postId}" style="background-color: var(--primary);">Share</button>
+                    <button class="share-post-btn btn btn-primary" data-id="${postId}">Share</button>
                     <div class="share-menu" id="admin-share-menu-${postId}">
                         <a href="#" class="share-item whatsapp" data-id="${postId}" title="Share on WhatsApp"><i class="fab fa-whatsapp"></i></a>
                         <a href="#" class="share-item twitter" data-id="${postId}" title="Share on Twitter"><i class="fab fa-twitter"></i></a>
                         <a href="#" class="share-item copy" data-id="${postId}" title="Copy Link"><i class="fas fa-link"></i></a>
                     </div>
                 </div>
-                <button class="edit-post-btn" data-id="${postId}" style="background-color: var(--primary); margin-right: 0.5rem;">Edit Post</button>
-                <button class="delete-post-btn" data-id="${postId}" style="background-color: #ef4444; margin-top: 1rem;">Delete Post</button>
+                <button class="edit-post-btn btn btn-primary" data-id="${postId}" style="margin-right: 0.5rem;">Edit Post</button>
+                <button class="delete-post-btn btn btn-danger" data-id="${postId}" style="margin-top: 1rem;">Delete Post</button>
             </div>
         `;
         existingPostsDiv.appendChild(postCard);
@@ -1210,6 +1073,10 @@ document.getElementById('existing-posts').addEventListener('click', async (e) =>
         if (postSnap.exists()) {
             const postData = postSnap.data();
             document.getElementById('post-title').value = postData.title;
+            if (!quill) {
+                showToast("Editor not loaded.", "error");
+                return;
+            }
             quill.root.innerHTML = postData.content; // Set content to Quill editor
             uploadedImageUrl = postData.image || ""; // Set current image URL
             document.getElementById('preview-img').src = uploadedImageUrl;
@@ -1228,6 +1095,10 @@ document.getElementById('existing-posts').addEventListener('click', async (e) =>
 // Helper to clear the post form
 function clearPostForm() {
     document.getElementById('post-title').value = '';
+    if (!quill) {
+        // No alert here to avoid spamming the user during automated cleanup/logout
+        return;
+    }
     quill.setContents([{ insert: '\n' }]); // Clear Quill editor content, insert newline to prevent empty state issues
     uploadedImageUrl = '';
     document.getElementById('preview-img').style.display = 'none';

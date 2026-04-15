@@ -1,13 +1,15 @@
 :root {
-    --primary: #4f46e5;
-    --primary-hover: #4338ca;
+    --primary: #2563eb;
+    --primary-hover: #1d4ed8;
     --dark: #0f172a;
     --light: #f1f5f9;
     --gray: #94a3b8;
     --white: #ffffff;
     --danger: #ef4444;
     --success: #10b981;
+    --neon: #22d3ee;
     --shadow: 0 10px 15px -3px rgb(0 0 0 / 0.1), 0 4px 6px -4px rgb(0 0 0 / 0.1);
+    --shadow-hover: 0 10px 25px rgba(37, 99, 235, 0.4);
 }
 
 body {
@@ -223,33 +225,136 @@ input:focus, textarea:focus, select:focus {
     }
 }
 
-button {
-    background: var(--primary);
-    color: white;
-    padding: 0.8rem 1.5rem;
-    border: none;
-    border-radius: 6px;
-    cursor: pointer;
-    font-weight: 600;
-    transition: opacity 0.2s;
-}
-
-button:hover {
-    background: var(--primary-hover);
-}
-
-.send-btn {
-    display: flex;
+/* --- Unified Button System --- */
+button, .btn {
+    display: inline-flex;
     align-items: center;
     justify-content: center;
     gap: 8px;
+    padding: 0.8rem 1.5rem;
+    border-radius: 8px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+    border: none;
+    font-family: inherit;
+    text-decoration: none;
+    position: relative;
+    overflow: hidden;
+}
+
+/* Variants */
+.btn-primary, button:not(.secondary-btn):not(.like-btn):not(.delete-post-btn):not(.delete-msg-btn) {
+    background: linear-gradient(135deg, var(--primary), #3b82f6);
+    color: white;
+    box-shadow: 0 4px 12px rgba(37, 99, 235, 0.2);
+}
+
+.btn-secondary, .secondary-btn {
+    background: var(--light);
+    color: var(--dark);
+    border: 1px solid #e2e8f0;
+}
+
+.btn-danger, .delete-post-btn {
+    background: var(--danger);
+    color: white;
+}
+
+.btn-success {
+    background: var(--success);
+    color: white;
+}
+
+/* Hover & Active States */
+button:hover, .btn:hover {
+    transform: translateY(-2px);
+    filter: brightness(1.1);
+    box-shadow: var(--shadow-hover);
+}
+
+button:active, .btn:active {
+    transform: translateY(0) scale(0.96);
+}
+
+button:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
+    transform: none !important;
+}
+
+/* Loading State */
+.btn.is-loading {
+    pointer-events: none;
+    color: transparent !important;
+}
+
+.btn.is-loading::after {
+    content: "";
+    position: absolute;
+    width: 20px;
+    height: 20px;
+    top: 50%;
+    left: 50%;
+    margin-top: -10px;
+    margin-left: -10px;
+    border: 3px solid rgba(255, 255, 255, 0.3);
+    border-radius: 50%;
+    border-top-color: white;
+    animation: spin 0.8s linear infinite;
+    z-index: 10;
+}
+
+.btn-secondary.is-loading::after {
+    border-top-color: var(--primary);
+    border-color: rgba(79, 70, 229, 0.1);
+}
+
+/* Special Utility Styles */
+.btn-pill {
+    border-radius: 999px;
+}
+
+.btn-glow:hover {
+    box-shadow: 0 0 10px var(--neon), 0 0 20px var(--neon);
+}
+
+/* Shine Effect Animation */
+.btn-shine::after {
+    content: "";
+    position: absolute;
+    top: 0;
+    left: -100%;
+    width: 100%;
+    height: 100%;
+    background: linear-gradient(
+        120deg,
+        transparent,
+        rgba(255, 255, 255, 0.3),
+        transparent
+    );
+    transition: 0.6s;
+}
+
+.btn-shine:hover::after {
+    left: 100%;
+}
+
+/* Legacy Overrides Clean-up */
+.secondary-btn {
+    width: 100%;
+    margin-top: 10px;
+}
+
+.send-btn .btn-text {
+    /* Handled by gap in .btn base */
 }
 
 .login-pill {
-    background: linear-gradient(135deg, var(--primary), #6366f1);
+    background: linear-gradient(135deg, var(--primary), #3b82f6);
     border-radius: 999px;
     padding: 0.6rem 1.4rem;
-    box-shadow: 0 4px 12px rgba(79, 70, 229, 0.2);
+    box-shadow: 0 4px 12px rgba(37, 99, 235, 0.2);
 }
 
 button:disabled {
@@ -276,6 +381,7 @@ button:disabled {
 
 /* Login Form Styling */
 #login-section {
+    position: relative;
     max-width: 400px;
     margin: 4rem auto;
     padding: 2rem;
@@ -283,6 +389,25 @@ button:disabled {
     border-radius: 12px;
     box-shadow: var(--shadow);
     text-align: center;
+    z-index: 1;
+}
+
+#login-section::before {
+    content: '';
+    position: fixed;
+    top: -20%;
+    left: -10%;
+    width: 120%;
+    height: 140%;
+    background: linear-gradient(rgba(224, 231, 255, 0.85), rgba(224, 231, 255, 0.85)), 
+                url('https://images.unsplash.com/photo-1499750310107-5fef28a66643?q=80&w=2070&auto=format&fit=crop');
+    background-size: cover;
+    background-position: center;
+    transform: rotate(-5deg) translateY(var(--parallax-y, 0px));
+    z-index: -1;
+    pointer-events: none;
+    filter: saturate(0.8);
+    transition: transform 0.1s ease-out;
 }
 
 #login-section h1 {
@@ -386,23 +511,6 @@ button:disabled {
 .slide-caption p {
     font-size: 1.2rem;
     color: #e0e0e0;
-}
-
-/* Read More Button in Slider */
-.read-more-btn {
-    display: inline-block;
-    margin-top: 1.5rem;
-    padding: 0.8rem 1.8rem;
-    background-color: var(--primary);
-    color: var(--white);
-    text-decoration: none;
-    border-radius: 6px;
-    font-weight: 600;
-    transition: background-color 0.3s ease, transform 0.2s ease;
-}
-.read-more-btn:hover {
-    background-color: var(--primary-hover);
-    transform: translateY(-2px);
 }
 
 /* Navigation Buttons */
@@ -1281,4 +1389,60 @@ button:active {
     resize: none;
     max-height: 150px;
     overflow-y: auto;
+}
+
+/* --- Centralized Toast Notifications --- */
+.toast-container {
+    position: fixed;
+    top: 80px;
+    right: 20px;
+    z-index: 10001;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    pointer-events: none;
+}
+
+.toast {
+    min-width: 280px;
+    max-width: 400px;
+    background: white;
+    padding: 1rem 1.25rem;
+    border-radius: 8px;
+    box-shadow: 0 10px 25px rgba(0,0,0,0.15);
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    pointer-events: auto;
+    animation: toastIn 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275) forwards;
+    border-left: 5px solid var(--primary);
+    font-weight: 500;
+    font-size: 0.9rem;
+}
+
+.toast.success { border-left-color: var(--success); color: #065f46; }
+.toast.error { border-left-color: var(--danger); color: #991b1b; }
+.toast.warning { border-left-color: #f59e0b; color: #92400e; }
+.toast.info { border-left-color: var(--primary); color: #1e40af; }
+
+.toast i {
+    font-size: 1.2rem;
+    flex-shrink: 0;
+}
+
+@keyframes toastIn {
+    from { transform: translateX(120%); opacity: 0; }
+    to { transform: translateX(0); opacity: 1; }
+}
+
+.toast.fade-out {
+    animation: toastOut 0.5s ease forwards;
+}
+
+@keyframes toastOut {
+    to { transform: translateX(120%); opacity: 0; }
+}
+
+@media (max-width: 768px) {
+    .toast-container { top: 20px; right: 10px; left: 10px; }
 }

@@ -9,8 +9,8 @@ export const SharedComponents = {
                 <h3>Confirm Logout</h3>
                 <p>Are you sure you want to log out?</p>
                 <div style="display: flex; gap: 10px; margin-top: 20px;">
-                    <button id="confirm-logout-btn" style="background: var(--danger); flex: 1; color: white; border: none; border-radius: 6px; padding: 0.8rem; cursor: pointer; font-weight: 600;">Logout</button>
-                    <button id="cancel-logout-btn" class="secondary-btn" style="flex: 1; margin: 0;">Cancel</button>
+                    <button id="confirm-logout-btn" class="btn btn-danger" style="flex: 1;">Logout</button>
+                    <button id="cancel-logout-btn" class="btn btn-secondary" style="flex: 1; margin: 0;">Cancel</button>
                 </div>
             </div>
         </div>
@@ -60,7 +60,7 @@ export const SharedComponents = {
                     <input type="text" id="modal-user-name" placeholder="Your name or nickname..." required>
                     <label style="display: block; margin-bottom: 0.5rem; font-weight: 600; font-size: 0.9rem;">Your Message</label>
                     <textarea id="modal-user-question" placeholder="Type your question or concern here..." rows="4" required></textarea>
-                    <button type="submit" id="modal-send-chat-btn" style="width: 100%; margin-top: 10px;">Send Message</button>
+                    <button type="submit" id="modal-send-chat-btn" class="btn btn-primary btn-shine" style="width: 100%; margin-top: 10px;">Send Message</button>
                 </form>
             </div>
         </div>
@@ -73,8 +73,8 @@ export const SharedComponents = {
                 <h3 id="publish-confirm-title">Confirm Publication</h3>
                 <p id="publish-confirm-msg">Are you sure you want to publish this post to the blog?</p>
                 <div style="display: flex; gap: 10px; margin-top: 20px;">
-                    <button id="confirm-publish-btn" style="flex: 1;">Yes, Publish</button>
-                    <button id="cancel-publish-btn" class="secondary-btn" style="flex: 1; margin: 0;">Cancel</button>
+                    <button id="confirm-publish-btn" class="btn btn-primary" style="flex: 1;">Yes, Publish</button>
+                    <button id="cancel-publish-btn" class="btn btn-secondary" style="flex: 1; margin: 0;">Cancel</button>
                 </div>
             </div>
         </div>
@@ -89,7 +89,7 @@ export const SharedComponents = {
                 </div>
                 <h3>Success!</h3>
                 <p id="publish-success-msg">Your blog post is now live.</p>
-                <button id="close-success-modal-btn" style="width: 100%; margin-top: 1.5rem;">Great!</button>
+                <button id="close-success-modal-btn" class="btn btn-primary" style="width: 100%; margin-top: 1.5rem;">Great!</button>
             </div>
         </div>
     `,
@@ -101,8 +101,8 @@ export const SharedComponents = {
                 <h3 style="color: var(--danger);">Delete Post?</h3>
                 <p>Are you sure you want to permanently delete this post? This action cannot be undone.</p>
                 <div style="display: flex; gap: 10px; margin-top: 20px;">
-                    <button id="confirm-delete-btn" style="background: var(--danger); flex: 1;">Delete</button>
-                    <button id="cancel-delete-btn" class="secondary-btn" style="flex: 1; margin: 0;">Cancel</button>
+                    <button id="confirm-delete-btn" class="btn btn-danger" style="flex: 1;">Delete</button>
+                    <button id="cancel-delete-btn" class="btn btn-secondary" style="flex: 1; margin: 0;">Cancel</button>
                 </div>
             </div>
         </div>
